@@ -6,6 +6,7 @@ import { api, ApiError } from '@/lib/api-client'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
+import { ModalContentSkeleton } from '@/components/ui/skeleton-variants'
 
 type DayWindow = { start: string; end: string } | null
 type WorkingHours = Record<'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun', DayWindow>
@@ -132,7 +133,7 @@ export function OperatingHoursModal({ onClose }: { onClose: () => void }) {
         {error && <p className="text-sm text-destructive">{error}</p>}
 
         {loading ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
+          <ModalContentSkeleton variant="list" />
         ) : (
           <div className="flex flex-col gap-4">
             {calendars.length === 0 && (

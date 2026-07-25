@@ -16,6 +16,7 @@ import {
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/providers/auth-provider'
 import { dashboardRouteForRole } from '@/lib/dashboard-routes'
+import { Skeleton } from '@/components/ui/skeleton'
 
 const STORAGE_KEY = 'veck-sidebar-collapsed'
 
@@ -87,7 +88,7 @@ export function Sidebar() {
   })
 
   const initial = user?.fullName?.[0]?.toUpperCase() ?? 'v'
-  const displayName = user?.fullName ?? (isLoading ? 'Loading…' : 'Profile')
+  const displayName = user?.fullName ?? (isLoading ? undefined : 'Profile')
 
   return (
     <nav
@@ -176,7 +177,13 @@ export function Sidebar() {
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent text-sm font-semibold text-accent-foreground">
             {initial}
           </span>
-          {!collapsed && <span className="min-w-0 truncate text-sm font-medium">{displayName}</span>}
+          {!collapsed && (
+            isLoading ? (
+              <Skeleton className="h-4 w-24 rounded-sm" />
+            ) : (
+              <span className="min-w-0 truncate text-sm font-medium">{displayName}</span>
+            )
+          )}
         </Link>
       </div>
     </nav>

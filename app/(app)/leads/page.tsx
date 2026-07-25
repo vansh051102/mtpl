@@ -165,7 +165,7 @@ export default function LeadsPage() {
   const appliedLiveEpoch = useRef(0)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkBusy, setBulkBusy] = useState(false)
-  const [, startTransition] = useTransition()
+  const [isPending, startTransition] = useTransition()
 
   /** Soft revalidate current + re-prefetch tabs — never blanks the UI. */
   const softRefresh = useCallback(() => {
@@ -1176,6 +1176,7 @@ export default function LeadsPage() {
             sortBy={sortBy}
             sortDir={sortDir}
             onSort={handleSort}
+            isPending={isPending}
           />
 
           <div className="flex flex-wrap items-center justify-between gap-3 pt-1">

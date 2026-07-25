@@ -557,8 +557,12 @@ export function NewLeadForm({ onCreated }: { onCreated: (leadId: string) => void
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 
-      <Button type="submit" disabled={submitting}>
-        {submitting ? 'Creating…' : 'Create lead'}
+      <Button
+        type="submit"
+        disabled={submitting}
+        className="flex items-center justify-center gap-2 transition-opacity duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
+      >
+        Create lead
       </Button>
     </form>
   )

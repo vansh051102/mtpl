@@ -153,8 +153,13 @@ export function LeadPurchaseRequests({
               </div>
             </div>
             <div className="flex gap-2">
-              <Button type="submit" size="sm" disabled={submitting}>
-                {submitting ? 'Creating…' : 'Create request'}
+              <Button
+                type="submit"
+                size="sm"
+                disabled={submitting}
+                className="flex items-center justify-center gap-2 transition-opacity duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                Create request
               </Button>
               <Button type="button" size="sm" variant="outline" onClick={() => setShowForm(false)}>
                 Cancel

@@ -36,7 +36,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
       <body className="min-h-screen bg-background font-sans text-sm text-foreground antialiased">
-        {children}
+        <div aria-live="polite" id="root-live-region">
+          {children}
+        </div>
       </body>
     </html>
   )

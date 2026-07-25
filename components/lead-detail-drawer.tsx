@@ -9,6 +9,7 @@ import {
   type SubTab,
 } from '@/components/lead-detail-panel'
 import type { LeadRow } from '@/components/leads-table'
+import { DrawerHeaderSkeleton } from '@/components/ui/skeleton-variants'
 
 function seedFromRow(row: LeadRow): LeadDetailData {
   return {
@@ -128,9 +129,18 @@ export function LeadDetailDrawer({
         aria-modal="true"
         aria-label="Lead details"
         className="animate-slide-in-right relative flex h-full w-full max-w-2xl flex-col overflow-hidden border-l border-border bg-card shadow-2xl"
+        {...(loading && !lead && {
+          'role': 'status',
+          'aria-live': 'polite',
+          'aria-busy': 'true',
+          'aria-label': 'Loading lead',
+        })}
       >
         {loading && !lead ? (
-          <p className="p-6 text-sm text-muted-foreground">Loading lead…</p>
+          <>
+            <DrawerHeaderSkeleton />
+            <span className="sr-only">Loading lead...</span>
+          </>
         ) : error && !lead ? (
           <p className="p-6 text-sm text-destructive">{error}</p>
         ) : lead ? (

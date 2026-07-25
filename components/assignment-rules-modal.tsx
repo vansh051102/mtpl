@@ -6,6 +6,7 @@ import { api, ApiError } from '@/lib/api-client'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
+import { ModalContentSkeleton } from '@/components/ui/skeleton-variants'
 
 interface OrgUser {
   id: string
@@ -127,7 +128,7 @@ export function AssignmentRulesModal({ onClose }: { onClose: () => void }) {
         {error && <p className="text-sm text-destructive">{error}</p>}
 
         {loading ? (
-          <p className="text-sm text-muted-foreground">Loading rules…</p>
+          <ModalContentSkeleton variant="list" />
         ) : (
           <div className="flex flex-col gap-3">
             {/* Header */}

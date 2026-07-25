@@ -6,6 +6,7 @@ import { Modal } from '@/components/ui/modal'
 import { StatusPill } from '@/components/ui/status-pill'
 import { LeadTimeline, type TimelineEvent } from '@/components/lead-timeline'
 import { formatCurrency } from '@/lib/utils'
+import { ModalContentSkeleton } from '@/components/ui/skeleton-variants'
 
 interface ContactDetail {
   id: string
@@ -64,7 +65,7 @@ export function Lead360Modal({ contactId, onClose }: { contactId: string; onClos
 
   return (
     <Modal title={contact ? `${contact.firstName} ${contact.lastName}` : 'Contact 360'} onClose={onClose} size="lg">
-      {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
+      {loading && <ModalContentSkeleton variant="list" />}
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       {contact && (

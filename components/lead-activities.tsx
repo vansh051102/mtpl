@@ -250,8 +250,13 @@ export function LeadActivities({
         )}
 
         <div>
-          <Button type="submit" size="sm" disabled={submitting || !title.trim()}>
-            {submitting ? 'Logging…' : 'Log activity'}
+          <Button
+            type="submit"
+            size="sm"
+            disabled={submitting || !title.trim()}
+            className="flex items-center justify-center gap-2 transition-opacity duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            Log activity
           </Button>
         </div>
         </form>

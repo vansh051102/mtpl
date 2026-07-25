@@ -463,7 +463,7 @@ export function LeadQuotes({
           !editingId &&
           renderQuoteForm({
             title: 'New quotation',
-            submitLabel: submitting ? 'Creating…' : 'Create quote',
+            submitLabel: 'Create quote',
             onSubmit: handleCreate,
             onCancel: cancelForm,
           })}
@@ -472,7 +472,7 @@ export function LeadQuotes({
           canEdit &&
           renderQuoteForm({
             title: 'Edit quotation',
-            submitLabel: submitting ? 'Saving…' : 'Save changes',
+            submitLabel: 'Save changes',
             onSubmit: handleUpdate,
             onCancel: cancelForm,
           })}
@@ -670,7 +670,12 @@ export function LeadQuotes({
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <Button type="submit" size="sm" disabled={submitting}>
+          <Button
+            type="submit"
+            size="sm"
+            disabled={submitting}
+            className="flex items-center justify-center gap-2 transition-opacity duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
+          >
             {submitLabel}
           </Button>
           <Button type="button" size="sm" variant="outline" onClick={onCancel}>

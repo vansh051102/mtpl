@@ -198,8 +198,13 @@ export function LeadActivityTab({
           {error && <p className="text-xs text-destructive">{error}</p>}
 
           <div>
-            <Button type="submit" size="sm" disabled={submitting}>
-              {submitting ? 'Saving…' : meta.verb}
+            <Button
+              type="submit"
+              size="sm"
+              disabled={submitting}
+              className="flex items-center justify-center gap-2 transition-opacity duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {meta.verb}
             </Button>
           </div>
         </form>

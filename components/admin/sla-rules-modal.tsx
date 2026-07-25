@@ -7,6 +7,7 @@ import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast'
 import { ALL_STAGES } from '@/lib/lead-stages'
+import { ModalContentSkeleton } from '@/components/ui/skeleton-variants'
 
 interface SlaRule {
   id: string
@@ -103,7 +104,7 @@ export function SlaRulesModal({ onClose }: { onClose: () => void }) {
         {error && <p className="text-sm text-destructive">{error}</p>}
 
         {loading ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
+          <ModalContentSkeleton variant="list" />
         ) : (
           <div className="flex flex-col gap-3">
             <div className="hidden grid-cols-[1fr_1.2fr_1fr_1fr_0.8fr_auto_auto] gap-2 px-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground sm:grid">

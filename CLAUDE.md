@@ -82,6 +82,19 @@ Applies especially to:
 
 Fix at the shared choke point, not per-caller. One guard in the common function beats a guard in each of five callers — and patching only the path in the ticket leaves the siblings broken.
 
+## 6. Loading States & Async UI
+
+**Skeleton loaders, never spinners. One skeleton container per async boundary.**
+
+- **Text Strings**: Never use "Loading...", "Saving…", "Creating…" text toggles. Replace with layout-shaped skeleton loaders.
+- **Buttons**: During submission, keep original action text ("Create lead", "Save changes"). Apply `disabled opacity-60 disabled:cursor-not-allowed` muted state. Wrap async handlers in `try...catch...finally` to prevent perpetually muted buttons on errors.
+- **Accessibility**: Top-level async boundary (modal, drawer, page) gets `role="status" aria-live="polite" aria-busy="true"`. Child skeleton components stay presentational (no role attributes). Single `<span className="sr-only">Loading...</span>` per container.
+- **Containers**: Use `<Skeleton />` from `components/ui/skeleton.tsx`. Compose with `FormFieldSkeleton`, `DrawerHeaderSkeleton`, `ModalContentSkeleton`, `PageSkeleton` from `components/ui/skeleton-variants.tsx`. Skeleton dimensions must exactly match real content (no Cumulative Layout Shift).
+- **Tables**: Render skeleton rows matching `pageSize` (not single row). Show skeletons ONLY for user-initiated fetches (e.g., `isPending`), not background revalidation.
+- **Client Components**: Client-side tab/view transitions wrap content in `<Suspense fallback={<TabSkeleton/>}>`. Server-side navigations use Next.js `app/*/loading.tsx` files.
+- **Modals**: Mount `<DialogContent>` shell immediately on open. Render skeleton inside body. Avoid duplicate `<DialogTitle>` components (unmount skeleton title when data mounts).
+- **ESLint**: Blocks `Loader2` imports and `animate-spin` class (including `cn({ 'animate-spin': flag })` conditional syntax).
+
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.

@@ -9,6 +9,7 @@ import { LEAD_PRIORITIES } from '@/lib/validation'
 import { getLeadDepartment } from '@/lib/lead-department'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import { statusPillClass } from '@/components/ui/status-pill'
 import { useToast } from '@/components/ui/toast'
 import { cn, formatDate } from '@/lib/utils'
@@ -134,6 +135,7 @@ interface LeadsTableProps {
   sortBy: SortBy
   sortDir: SortDir
   onSort: (column: SortBy) => void
+  isPending?: boolean
 }
 
 export function LeadsTable({
@@ -143,6 +145,7 @@ export function LeadsTable({
   onToggleSelect,
   onToggleSelectAll,
   onChanged,
+  isPending,
 }: LeadsTableProps) {
   const { toast } = useToast()
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -605,6 +608,19 @@ export function LeadsTable({
                 </Fragment>
               )
             })}
+            {isPending && Array.from({ length: data.length || 10 }).map((_, i) => (
+              <tr key={`skeleton-${i}`} className="border-t border-border">
+                <td className="crm-table-cell w-10"><Skeleton className="h-4 w-4 rounded" /></td>
+                <td className="crm-table-cell"><Skeleton className="h-4 w-36" /></td>
+                <td className="crm-table-cell"><Skeleton className="h-3.5 w-28" /></td>
+                <td className="crm-table-cell"><Skeleton className="h-7 w-24 rounded-md" /></td>
+                <td className="crm-table-cell"><Skeleton className="h-3.5 w-32" /></td>
+                <td className="crm-table-cell"><Skeleton className="h-7 w-20 rounded-md" /></td>
+                <td className="crm-table-cell"><Skeleton className="h-7 w-28 rounded-md" /></td>
+                <td className="crm-table-cell"><Skeleton className="h-7 w-28 rounded-md" /></td>
+                <td className="crm-table-cell"><div className="flex gap-1"><Skeleton className="h-7 w-7 rounded-md" /><Skeleton className="h-7 w-7 rounded-md" /></div></td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>

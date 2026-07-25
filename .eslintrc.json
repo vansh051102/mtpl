@@ -2,6 +2,25 @@
   "extends": "next/core-web-vitals",
   "ignorePatterns": ["src/**", ".next/**", "node_modules/**"],
   "rules": {
-    "@next/next/no-img-element": "off"
+    "@next/next/no-img-element": "off",
+    "no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          {
+            "name": "lucide-react",
+            "importNames": ["Loader2"],
+            "message": "Loader2 spinner forbidden. Use layout-shaped <Skeleton /> from @/components/ui/skeleton."
+          }
+        ]
+      }
+    ],
+    "no-restricted-syntax": [
+      "error",
+      {
+        "selector": "Literal[value=/animate-spin/], TemplateElement[value.raw=/animate-spin/]",
+        "message": "Spinning animations forbidden. Use layout-shaped <Skeleton /> components."
+      }
+    ]
   }
 }
