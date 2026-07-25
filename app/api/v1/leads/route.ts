@@ -42,7 +42,7 @@ export const POST = withErrorHandler(async (req) => {
 
   // Contact must belong to the same org
   const contact = await prisma.contact.findFirst({
-    where: { id: input.contactId, orgId: ctx.orgId },
+    where: { id: input.contactId, orgId: ctx.orgId, deletedAt: null },
   })
   if (!contact) throw new NotFoundError('Contact')
 

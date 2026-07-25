@@ -23,6 +23,7 @@ export const GET = withErrorHandler(async (req: Request) => {
       status: 'pending',
       title: { startsWith: FOLLOW_UP_TITLE_PREFIX },
       scheduledFor: { lt: now },
+      leadId: { not: null }, // follow-up tasks are always Lead-linked, never Contact-linked
     },
     include: { lead: { select: { id: true, companyName: true, stage: true, orgId: true } } },
   })
@@ -30,11 +31,13 @@ export const GET = withErrorHandler(async (req: Request) => {
   let nudged = 0
   let cancelled = 0
   for (const task of overdue) {
+    if (!task.lead) continue // guaranteed by the leadId filter above
+    const lead = task.lead // local const so the null-check narrows across the closure below
     const meta = (task.metadata ?? {}) as Record<string, unknown>
     if (meta.nudged) continue // already flagged on a previous run
 
     // Leads that left Quote Sent no longer need follow-ups; cancel them.
-    if (task.lead.stage !== 'Quote Sent') {
+    if (lead.stage !== 'Quote Sent') {
       const cancelledNow = await prisma.activity.updateMany({
         where: { id: task.id, status: 'pending' },
         data: { status: 'cancelled' },
@@ -65,8 +68,8 @@ export const GET = withErrorHandler(async (req: Request) => {
 
     await prisma.$transaction(async (tx) => {
       const timeline = await tx.timeline.upsert({
-        where: { leadId: task.lead.id },
-        create: { leadId: task.lead.id, orgId: task.lead.orgId },
+        where: { leadId: lead.id },
+        create: { leadId: lead.id, orgId: lead.orgId },
         update: {},
       })
       await tx.timelineEvent.create({
@@ -74,7 +77,7 @@ export const GET = withErrorHandler(async (req: Request) => {
           timelineId: timeline.id,
           type: 'follow_up_overdue',
           title: `Overdue: ${task.title}`,
-          description: `Follow-up for ${task.lead.companyName} was due ${task.scheduledFor?.toISOString()}`,
+          description: `Follow-up for ${lead.companyName} was due ${task.scheduledFor?.toISOString()}`,
           createdBy: 'system',
         },
       })

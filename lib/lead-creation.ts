@@ -172,5 +172,5 @@ export async function createLeadWithDefaults(input: CreateLeadInput): Promise<Cr
     })
 
     return { duplicate: false, lead: created }
-  })
+  }, { timeout: 20_000, maxWait: 10_000 })
 }

@@ -58,6 +58,34 @@ export async function getPurchaseSalesScope(purchaseUserId: string): Promise<str
   return [purchaseUserId]
 }
 
+/**
+ * User IDs sharing the viewer's territory (region) or branch (team) — the
+ * ABAC scope for marketing_manager's Contact visibility. Returns `null` when
+ * the viewer has neither field set, so callers can fall back to the prior
+ * org-wide behavior rather than silently scoping to an empty/wrong set for
+ * orgs that haven't configured territories yet.
+ */
+export async function getUsersInSameTerritoryOrBranch(userId: string): Promise<string[] | null> {
+  const viewer = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { orgId: true, territory: true, branch: true },
+  })
+  if (!viewer || (!viewer.territory && !viewer.branch)) return null
+
+  const peers = await prisma.user.findMany({
+    where: {
+      orgId: viewer.orgId,
+      status: 'active',
+      OR: [
+        ...(viewer.territory ? [{ territory: viewer.territory }] : []),
+        ...(viewer.branch ? [{ branch: viewer.branch }] : []),
+      ],
+    },
+    select: { id: true },
+  })
+  return peers.map((p) => p.id)
+}
+
 // ============================================================================
 // OWNERSHIP FILTERING
 // ============================================================================
@@ -89,6 +117,7 @@ export function buildOwnershipFilter(
           OR: [{ assignedToId: null }, { assignedTo: { department: 'Marketing' } }],
         }
       }
+      // Contacts have no department link — manager sees all org contacts.
       return {}
 
     case 'marketing_executive':
@@ -97,6 +126,9 @@ export function buildOwnershipFilter(
       }
       if (resource === 'activities') {
         return { lead: { assignedToId: userId } }
+      }
+      if (resource === 'contacts') {
+        return { createdById: userId }
       }
       return {}
 
@@ -163,6 +195,14 @@ export async function buildOwnershipFilterAsync(
   department: string | null,
   resource: 'leads' | 'contacts' | 'activities' | 'quotes' | 'purchase_requests'
 ): Promise<Record<string, any>> {
+  // ABAC: marketing_manager's Contact visibility narrows to their own
+  // territory/branch peers when either is configured (else org-wide, same
+  // as before — see getUsersInSameTerritoryOrBranch's null-fallback comment).
+  if (role === 'marketing_manager' && resource === 'contacts') {
+    const scope = await getUsersInSameTerritoryOrBranch(userId)
+    return scope ? { createdById: { in: scope } } : {}
+  }
+
   if (role !== 'purchase') {
     return buildOwnershipFilter(userId, role, department, resource)
   }
@@ -202,6 +242,68 @@ export async function buildOwnershipFilterAsync(
     }
   }
   return {}
+}
+
+/**
+ * Check if a user can access a specific contact (for the pre-Lead call-log/
+ * reminder/lock workflow, and the post-handoff Lead-linked views sales
+ * roles use). marketing_executive: own contacts only. marketing_manager:
+ * territory/branch peers, mirroring the async list-level ABAC scope.
+ * sales_executive/sales_manager: only contacts linked to one of their own
+ * (or department's) leads — a contact with no lead yet hasn't been handed
+ * off to sales, so there's nothing for them to own. Other roles (purchase,
+ * sales_purchase, admin) stay permissive — no defined Contact ownership
+ * model for them yet.
+ */
+export async function canAccessContact(
+  userId: string,
+  role: string,
+  contactId: string
+): Promise<boolean> {
+  if (role === 'marketing_executive') {
+    const contact = await prisma.contact.findUnique({
+      where: { id: contactId },
+      select: { createdById: true },
+    })
+    if (!contact) return false
+    return contact.createdById === userId
+  }
+
+  if (role === 'marketing_manager') {
+    const scope = await getUsersInSameTerritoryOrBranch(userId)
+    if (!scope) return true
+    const contact = await prisma.contact.findUnique({
+      where: { id: contactId },
+      select: { createdById: true },
+    })
+    if (!contact) return false
+    return scope.includes(contact.createdById)
+  }
+
+  if (role === 'sales_executive' || role === 'sales_manager') {
+    const contact = await prisma.contact.findUnique({
+      where: { id: contactId },
+      select: { leads: { select: { assignedToId: true } } },
+    })
+    if (!contact) return false
+    if (contact.leads.length === 0) return false
+
+    if (role === 'sales_executive') {
+      return contact.leads.some((l) => l.assignedToId === userId)
+    }
+
+    for (const l of contact.leads) {
+      if (!l.assignedToId) return true
+      const assignee = await prisma.user.findUnique({
+        where: { id: l.assignedToId },
+        select: { department: true },
+      })
+      if (assignee?.department === 'Sales') return true
+    }
+    return false
+  }
+
+  return true
 }
 
 /**

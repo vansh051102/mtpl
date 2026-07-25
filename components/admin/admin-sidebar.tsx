@@ -40,6 +40,7 @@ const SECTIONS: { title: string; items: { href: string; label: string }[] }[] = 
     title: 'Monitoring',
     items: [
       { href: 'sla-dashboard', label: 'SLA Dashboard' },
+      { href: 'anomaly-queue', label: 'Anomaly Queue' },
     ],
   },
 ]

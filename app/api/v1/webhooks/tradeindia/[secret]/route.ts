@@ -22,9 +22,9 @@ async function findOrCreateContact(orgId: string, createdById: string, lead: Tra
   const lastName = rest.join(' ') || '-'
 
   const existing = email
-    ? await prisma.contact.findFirst({ where: { orgId, email } })
+    ? await prisma.contact.findFirst({ where: { orgId, email, deletedAt: null } })
     : phone
-    ? await prisma.contact.findFirst({ where: { orgId, phone } })
+    ? await prisma.contact.findFirst({ where: { orgId, phone, deletedAt: null } })
     : null
   if (existing) return existing
 

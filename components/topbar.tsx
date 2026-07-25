@@ -4,9 +4,10 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
-import { Bell, ChevronDown, LogOut, Menu, Search, User } from 'lucide-react'
+import { ChevronDown, LogOut, Menu, Search, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/theme-toggle'
+import { NotificationBell } from '@/components/notification-bell'
 import { supabaseBrowser } from '@/lib/supabase-browser'
 import { useCurrentUser } from '@/lib/use-current-user'
 
@@ -65,14 +66,7 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
           />
         </label>
 
-        <button
-          type="button"
-          className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-border text-muted-foreground hover:bg-muted hover:text-foreground"
-          aria-label="Notifications"
-        >
-          <Bell className="h-4 w-4" />
-          <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-accent" />
-        </button>
+        <NotificationBell />
 
         <ThemeToggle />
 

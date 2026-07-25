@@ -14,6 +14,8 @@ import {
 import { Prisma } from '@prisma/client'
 import { validateRequest } from '@/lib/middleware/validate-headers'
 import { rbacService } from '@/lib/services/rbac.service'
+import { buildOwnershipFilterAsync } from '@/lib/ownership'
+import { resolveMaskedFields, applyContactFieldMask } from '@/lib/contact-serializer'
 
 // POST /api/v1/contacts - Create a contact
 export const POST = withErrorHandler(async (req) => {
@@ -79,7 +81,7 @@ export const POST = withErrorHandler(async (req) => {
 // GET /api/v1/contacts - List contacts with pagination & search
 export const GET = withErrorHandler(async (req) => {
   const ctx = await validateRequest(req)
-  const { orgId } = ctx
+  const { orgId, userId, role } = ctx
   rbacService.requirePermission(await rbacService.getUserPermissions(ctx.userId), PERMISSIONS.CONTACTS_READ)
 
   const url = new URL(req.url)
@@ -90,11 +92,27 @@ export const GET = withErrorHandler(async (req) => {
   const emailExact = url.searchParams.get('email')
   // 'assigned' | 'unassigned' — whether a Lead has been created from this contact
   const assignedFilter = url.searchParams.get('assigned')
+  // 'New Lead' | 'Contacted' | 'Disqualified' — pre-Lead stage (lib/lead-stages.ts)
+  const stageFilter = url.searchParams.get('stage')
+  // 'today' | 'overdue' — nextFollowupDate bucket for the Lead Gen queue
+  const followupFilter = url.searchParams.get('followup')
+
+  const todayStart = new Date()
+  todayStart.setHours(0, 0, 0, 0)
+  const todayEnd = new Date(todayStart)
+  todayEnd.setDate(todayEnd.getDate() + 1)
+
+  const ownershipFilter = await buildOwnershipFilterAsync(userId, role || 'admin', null, 'contacts')
 
   const where = {
     orgId,
+    deletedAt: null,
+    ...ownershipFilter,
     ...(assignedFilter === 'assigned' ? { leads: { some: {} } } : {}),
     ...(assignedFilter === 'unassigned' ? { leads: { none: {} } } : {}),
+    ...(stageFilter ? { stage: stageFilter } : {}),
+    ...(followupFilter === 'today' ? { nextFollowupDate: { gte: todayStart, lt: todayEnd } } : {}),
+    ...(followupFilter === 'overdue' ? { nextFollowupDate: { lt: todayStart } } : {}),
     ...(phoneExact || emailExact
       ? {
           OR: [
@@ -119,7 +137,7 @@ export const GET = withErrorHandler(async (req) => {
       where,
       skip,
       take: limit,
-      orderBy: { createdAt: 'desc' },
+      orderBy: followupFilter ? { nextFollowupDate: 'asc' as const } : { createdAt: 'desc' as const },
       include: {
         leads: {
           select: { id: true, stage: true, assignedTo: { select: { fullName: true } } },
@@ -131,7 +149,10 @@ export const GET = withErrorHandler(async (req) => {
     prisma.contact.count({ where }),
   ])
 
-  return paginatedResponse(contacts, {
+  const maskedFields = await resolveMaskedFields(orgId, ctx.userId, role || 'admin')
+  const data = maskedFields.length ? contacts.map((c) => applyContactFieldMask(c, maskedFields)) : contacts
+
+  return paginatedResponse(data, {
     page,
     limit,
     total,

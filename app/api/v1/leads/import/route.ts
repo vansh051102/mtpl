@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { logAudit } from '@/lib/audit'
 import { createLeadWithDefaults } from '@/lib/lead-creation'
@@ -109,22 +110,38 @@ export const POST = withErrorHandler(async (req: Request) => {
     const email = normalizeEmail(row.email)
     const phone = normalizePhone(row.phone)
     try {
-      const contact = await prisma.contact.upsert({
-        where: { orgId_email: { orgId, email } },
-        create: {
-          orgId,
-          firstName: row.firstName,
-          lastName: row.lastName,
-          email,
-          phone,
-          source: row.source || 'Other',
-          gstNumber: row.gstNumber,
-          city: row.city,
-          tags: row.tag ? [row.tag] : [],
-          createdById: userId,
-        },
-        update: {}, // existing contact wins; import never overwrites the contact
-      })
+      // findFirst + create rather than upsert-by-compound-unique: the
+      // (orgId,email) uniqueness is now a partial index (WHERE deletedAt IS
+      // NULL, see migration 20260726000000), which Prisma can't express as a
+      // named compound-unique input — and a soft-deleted contact with this
+      // email should be treated as absent (its email is free to reuse), not
+      // matched. existing contact wins; import never overwrites it.
+      let contact = await prisma.contact.findFirst({ where: { orgId, email, deletedAt: null } })
+      if (!contact) {
+        try {
+          contact = await prisma.contact.create({
+            data: {
+              orgId,
+              firstName: row.firstName,
+              lastName: row.lastName,
+              email,
+              phone,
+              source: row.source || 'Other',
+              gstNumber: row.gstNumber,
+              city: row.city,
+              tags: row.tag ? [row.tag] : [],
+              createdById: userId,
+            },
+          })
+        } catch (err) {
+          if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+            contact = await prisma.contact.findFirst({ where: { orgId, email, deletedAt: null } })
+            if (!contact) throw err
+          } else {
+            throw err
+          }
+        }
+      }
 
       const result = await createLeadWithDefaults({
         orgId,

@@ -16,6 +16,7 @@ const PUBLIC_ROUTES = [
   '/api/internal/session',
   '/api/v1/webhooks',
   '/api/v1/cron',
+  '/api/v1/cti',
 ]
 
 const ADMIN_ROUTES = ['/admin']

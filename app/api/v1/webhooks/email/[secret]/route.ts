@@ -25,7 +25,7 @@ async function findOrCreateContact(orgId: string, createdById: string, from: str
   const [firstName, ...rest] = name.split(/\s+/)
   const lastName = rest.join(' ') || '-'
 
-  const existing = await prisma.contact.findFirst({ where: { orgId, email } })
+  const existing = await prisma.contact.findFirst({ where: { orgId, email, deletedAt: null } })
   if (existing) return existing
 
   return prisma.contact.create({

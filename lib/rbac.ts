@@ -10,6 +10,7 @@ export {
   buildOwnershipFilter,
   buildOwnershipFilterAsync,
   canAccessLead,
+  canAccessContact,
 } from './ownership'
 
 // ============================================================================

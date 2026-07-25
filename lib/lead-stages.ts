@@ -73,6 +73,7 @@ export const DISQUALIFIED_REASONS = [
   'Material Cannot Be Sourced',
   'Duplicate Lead',
   'Management Decision',
+  'Returned to Lead Gen',
   'Other',
 ] as const
 
@@ -140,6 +141,7 @@ export const CALL_OUTCOMES = [
   'Not Reachable',
   'Wrong Number',
   'Call Back Requested',
+  'DND / Do Not Call',
 ] as const
 
 // Maps a call outcome to the lead.contactOutcome value that drives the

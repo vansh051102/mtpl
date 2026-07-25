@@ -32,9 +32,9 @@ async function findOrCreateContact(orgId: string, createdById: string, lead: Jus
   const phone = lead.mobile ? normalizePhone(lead.mobile) : undefined
 
   const existing = email
-    ? await prisma.contact.findFirst({ where: { orgId, email } })
+    ? await prisma.contact.findFirst({ where: { orgId, email, deletedAt: null } })
     : phone
-    ? await prisma.contact.findFirst({ where: { orgId, phone } })
+    ? await prisma.contact.findFirst({ where: { orgId, phone, deletedAt: null } })
     : null
   if (existing) return existing
 

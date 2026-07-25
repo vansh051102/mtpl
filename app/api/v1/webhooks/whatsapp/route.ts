@@ -1,11 +1,10 @@
 import { createHmac, timingSafeEqual } from 'crypto'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { createLeadWithDefaults } from '@/lib/lead-creation'
 import { WhatsAppWebhookSchema } from '@/lib/validation'
 import { rateLimitResponse } from '@/lib/rate-limit'
 import { webhookLimiter } from '@/lib/rate-limit-db'
-import { normalizePhone } from '@/lib/normalize'
+import { enqueueWebhookPayload } from '@/lib/webhook-queue'
 
 function verifySignature(rawBody: string, signatureHeader: string | null, appSecret: string): boolean {
   if (!signatureHeader?.startsWith('sha256=')) return false
@@ -15,31 +14,6 @@ function verifySignature(rawBody: string, signatureHeader: string | null, appSec
   const providedBuf = Buffer.from(provided)
   if (expectedBuf.length !== providedBuf.length) return false
   return timingSafeEqual(expectedBuf, providedBuf)
-}
-
-function placeholderEmail(waId: string): string {
-  return `phone-${waId}@leads.whatsapp.veck.internal`
-}
-
-async function findOrCreateContact(orgId: string, createdById: string, waId: string, name: string | undefined) {
-  const phone = normalizePhone(waId)
-  const [firstName, ...rest] = (name || 'WhatsApp Buyer').trim().split(/\s+/)
-  const lastName = rest.join(' ') || '-'
-
-  const existing = await prisma.contact.findFirst({ where: { orgId, phone } })
-  if (existing) return existing
-
-  return prisma.contact.create({
-    data: {
-      orgId,
-      firstName,
-      lastName,
-      email: placeholderEmail(waId),
-      phone,
-      source: 'WhatsApp Business',
-      createdById,
-    },
-  })
 }
 
 // GET /api/v1/webhooks/whatsapp - Meta's Cloud API webhook verification
@@ -127,43 +101,33 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: true, status: 'ignored' })
   }
 
+  // Queue each message instead of processing inline — a batch webhook call
+  // used to loop synchronously over every message (contact find/create +
+  // createLeadWithDefaults transaction each), which is real timeout risk for
+  // a multi-message batch. The drain cron (cron/webhook-drain) does that work
+  // async; this handler just persists enough to reconstruct it and returns.
   try {
-    const results = []
     for (const message of messages) {
-      const existingLead = await prisma.lead.findFirst({
-        where: { orgId, externalId: message.id },
-        select: { id: true },
-      })
-      if (existingLead) {
-        results.push({ messageId: message.id, status: 'duplicate_skipped', leadId: existingLead.id })
-        continue
-      }
-
       const contactInfo = contacts.find((c) => c.wa_id === message.from)
-      const contact = await findOrCreateContact(orgId, systemUserId, message.from, contactInfo?.profile?.name)
-
-      const result = await createLeadWithDefaults({
+      await enqueueWebhookPayload({
         orgId,
-        contactId: contact.id,
-        companyName: contactInfo?.profile?.name || contact.phone,
-        priority: 'Medium',
-        notes: message.text?.body,
-        source: 'WhatsApp Business',
-        sourceDetails: { waId: message.from, type: message.type },
-        externalId: message.id,
-        createdById: systemUserId,
+        sourceSystem: 'WHATSAPP',
+        phone: message.from,
+        companyName: contactInfo?.profile?.name,
+        sourceMetadata: {
+          messageId: message.id,
+          type: message.type,
+          text: message.text?.body,
+          waId: message.from,
+          profileName: contactInfo?.profile?.name,
+          systemUserId,
+        },
       })
-
-      results.push(
-        result.duplicate
-          ? { messageId: message.id, status: 'duplicate_linked', leadId: result.existingLead.id }
-          : { messageId: message.id, status: 'created', leadId: result.lead.id }
-      )
     }
 
-    return NextResponse.json({ success: true, results }, { status: 201 })
+    return NextResponse.json({ success: true, status: 'queued', count: messages.length }, { status: 202 })
   } catch (error) {
-    console.error('WhatsApp webhook processing error:', error)
+    console.error('WhatsApp webhook queueing error:', error)
     return NextResponse.json({ error: 'Internal processing error' }, { status: 500 })
   }
 }

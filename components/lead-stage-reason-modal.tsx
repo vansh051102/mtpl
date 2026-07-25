@@ -5,6 +5,9 @@ import { api, ApiError } from '@/lib/api-client'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { reasonsForStage } from '@/lib/lead-stages'
+import { cn } from '@/lib/utils'
+
+const MIN_OTHER_DETAILS_LENGTH = 20
 
 interface Props {
   leadId: string
@@ -28,8 +31,15 @@ export function LeadStageReasonModal({ leadId, targetStage, onClose, onDone }: P
 
   const reasons = reasonsForStage(targetStage)
 
+  const detailsRequired = reason === 'Other'
+  const detailsTooShort = detailsRequired && details.trim().length < MIN_OTHER_DETAILS_LENGTH
+
   async function handleSave() {
     if (!reason) return
+    if (detailsTooShort) {
+      setError(`Details must be at least ${MIN_OTHER_DETAILS_LENGTH} characters`)
+      return
+    }
     setSaving(true)
     setError(null)
     try {
@@ -77,7 +87,7 @@ export function LeadStageReasonModal({ leadId, targetStage, onClose, onDone }: P
 
         <div className="flex flex-col gap-1">
           <label htmlFor="loss-details" className="text-xs font-medium text-muted-foreground">
-            Details (optional)
+            Details {detailsRequired ? `(required, min ${MIN_OTHER_DETAILS_LENGTH} characters)` : '(optional)'}
           </label>
           <textarea
             id="loss-details"
@@ -99,9 +109,10 @@ export function LeadStageReasonModal({ leadId, targetStage, onClose, onDone }: P
             variant="destructive"
             size="sm"
             onClick={handleSave}
-            disabled={!reason || saving}
+            disabled={!reason || saving || detailsTooShort}
+            className={cn(saving && 'opacity-60 disabled:cursor-not-allowed')}
           >
-            {saving ? 'Saving…' : `Move to ${targetStage}`}
+            {`Move to ${targetStage}`}
           </Button>
         </div>
       </div>

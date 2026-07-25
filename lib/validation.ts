@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { PERMISSIONS } from './permissions'
+import { CALL_OUTCOMES, DISQUALIFIED_REASONS } from './lead-stages'
 
 // ============================================================================
 // AUTH VALIDATION
@@ -48,6 +49,61 @@ export const UpdateContactSchema = CreateContactSchema.partial()
 
 export type CreateContactInput = z.infer<typeof CreateContactSchema>
 export type UpdateContactInput = z.infer<typeof UpdateContactSchema>
+
+// ============================================================================
+// CONTACT LEAD-GEN WORKFLOW VALIDATION (Call Log / Reminder / Disqualify)
+// ============================================================================
+
+export const LogContactCallSchema = z.object({
+  outcome: z.enum(CALL_OUTCOMES),
+  duration: z.number().positive().optional(),
+  notes: z.string().optional(),
+  clientMutationId: z.string().optional(),
+  expectedVersion: z.number().int().optional(),
+})
+
+export const SetContactReminderSchema = z.object({
+  dueDate: z.coerce.date(),
+  timeZone: z.string().default('Asia/Kolkata'),
+  note: z.string().optional(),
+  clientMutationId: z.string().optional(),
+  expectedVersion: z.number().int().optional(),
+})
+
+export const DisqualifyContactSchema = z
+  .object({
+    reason: z.enum(DISQUALIFIED_REASONS),
+    details: z.string().optional(),
+    expectedVersion: z.number().int().optional(),
+  })
+  .refine(
+    (data) => {
+      if (data.reason === 'Other') {
+        return Boolean(data.details && data.details.trim().length >= 20)
+      }
+      return true
+    },
+    { message: 'Details must be at least 20 characters when reason is "Other"' }
+  )
+
+export const UnmaskContactFieldSchema = z.object({
+  field: z.enum(['phone', 'email', 'gstNumber']),
+  reason: z.string().optional(),
+})
+
+// CTI (call telephony) webhook receiver — provider-agnostic shape (Gap 15).
+export const CtiWebhookSchema = z.object({
+  externalCallId: z.string().min(1),
+  phone: z.string().min(1),
+  durationSeconds: z.number().int().min(0),
+  status: z.enum(['COMPLETED', 'MISSED', 'BUSY', 'BLOCKED']),
+  recordingUrl: z.string().url().optional(),
+})
+
+export type LogContactCallInput = z.infer<typeof LogContactCallSchema>
+export type SetContactReminderInput = z.infer<typeof SetContactReminderSchema>
+export type DisqualifyContactInput = z.infer<typeof DisqualifyContactSchema>
+export type UnmaskContactFieldInput = z.infer<typeof UnmaskContactFieldSchema>
 
 // ============================================================================
 // LEAD VALIDATION (Phase 1)
@@ -167,11 +223,11 @@ export const UpdateLeadStageSchema = z
         (data.stage === 'Deal Lost' || data.stage === 'Disqualified') &&
         data.reason === 'Other'
       ) {
-        return Boolean(data.reasonDetails && data.reasonDetails.trim().length > 0)
+        return Boolean(data.reasonDetails && data.reasonDetails.trim().length >= 20)
       }
       return true
     },
-    { message: 'Details are required when reason is "Other"' }
+    { message: 'Details must be at least 20 characters when reason is "Other"' }
   )
 
 export const AssignLeadSchema = z.object({

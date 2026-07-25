@@ -51,6 +51,7 @@ model Organization {
   kpiSnapshots      KpiSnapshot[]
   kraDefinitions    KraDefinition[]
   timelines         Timeline[]
+  webhookPayloads   WebhookPayload[]
 
   @@index([slug])
 }
@@ -193,6 +194,12 @@ model Settings {
   justdialApiKey       String?
   justdialConfiguredBy String?
 
+  // CTI (call telephony) webhook receiver — receiver only, no outbound
+  // dialing integration. Whichever provider (Twilio/Exotel/Knowlarity) is
+  // configured posts call telemetry to this per-org secret URL.
+  ctiWebhookSecret String? @unique
+  ctiConfiguredBy  String?
+
   updatedAt DateTime @updatedAt
   updatedBy String
 }
@@ -249,18 +256,57 @@ model Contact {
   tags          String[] @default([])
   customFields  Json?
 
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  createdById String
-  deletedAt   DateTime?
+  // Lead-gen (telecaller) workflow — pre-Lead call/follow-up tracking.
+  // Reuses the same stage vocabulary as Lead (lib/lead-stages.ts ALL_STAGES);
+  // only 'New Lead' | 'Contacted' | 'Disqualified' are ever set here since
+  // 'Qualified' onward is represented by the Lead created via assign-to-sales.
+  stage                String    @default("New Lead")
+  lastCallOutcome       String?
+  lastCallDate          DateTime?
+  nextFollowupDate      DateTime?
+  nextFollowupTimeZone  String?
+  disqualifiedReason    String?
+  disqualifiedDetails   String?
 
-  leads Lead[]
+  // Concurrency lease — held while a Lead Gen person has a Call Log/Reminder
+  // modal open for this contact, so a second user sees it's in progress.
+  // Lazily expired (lockedUntil < now) at read/write time; no sweep cron.
+  lockedByUserId String?
+  lockedUntil    DateTime?
 
-  @@unique([orgId, email])
-  @@unique([orgId, phone])
+  // Do-Not-Call compliance (Gap 24). isDncListed hard-blocks the Call Log
+  // action; only an org admin can clear it via the compliance override.
+  isDncListed      Boolean   @default(false)
+  dncStatus        String    @default("CLEARED") // CLEARED | GLOBAL_DNC | USER_OPT_OUT
+  consentTimestamp DateTime?
+  optOutSource     String?
+
+  version Int @default(1)
+
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  createdById    String
+  deletedAt      DateTime?
+  deletedByUserId String?
+
+  leads      Lead[]
+  activities Activity[]
+  piiViewLogs PiiViewLog[]
+  fieldDiffs LeadFieldDiff[]
+  anomalyFlags AnomalyFlag[]
+
+  // Uniqueness on (orgId, email) / (orgId, phone) is enforced by partial
+  // unique INDEXES (WHERE "deletedAt" IS NULL), not declared here — Prisma's
+  // schema DSL can't express partial unique constraints (prisma/prisma#7108).
+  // See migration 20260726000000_add_leadgen_phase2 for the raw SQL. This
+  // lets a soft-deleted contact's phone/email be legitimately reused by a
+  // genuine new inquiry without a P2002 collision against the deleted row.
   @@index([orgId])
   @@index([source])
   @@index([deletedAt])
+  @@index([stage])
+  @@index([nextFollowupDate])
+  @@index([lockedByUserId])
 }
 
 model Lead {
@@ -427,8 +473,15 @@ model TimelineEvent {
 model Activity {
   id     String @id @default(uuid())
   orgId  String
-  leadId String
-  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  // Exactly one of leadId/contactId is set (enforced in application code, not
+  // the DB): pre-Lead call/reminder activities logged by Lead Gen against a
+  // Contact carry contactId only; everything logged against an existing Lead
+  // (including post-handoff) carries leadId only.
+  leadId String?
+  lead   Lead?   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  contactId String?
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
   type        String
   title       String
@@ -445,9 +498,98 @@ model Activity {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Idempotency for the Contact call-log/reminder path (offline-sync retry
+  // safety) — optional, only set by clients that supply one. Postgres unique
+  // indexes treat each NULL as distinct, so rows without a key never collide.
+  clientMutationId String?
+
+  // CTI telemetry (Gap 15) — populated by the CTI webhook receiver when a
+  // manually-logged call is later matched against provider call data.
+  ctiVerified Boolean?
+
+  @@unique([contactId, clientMutationId])
   @@index([leadId])
+  @@index([contactId])
   @@index([type])
   @@index([scheduledFor])
+}
+
+// High-volume inbound lead webhooks (Gap 13) write here immediately and
+// return 200; a drain cron processes rows async so a traffic spike never
+// blocks the webhook's response or exhausts the request-scoped DB pool.
+model WebhookPayload {
+  id           String @id @default(uuid())
+  orgId        String
+  org          Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  sourceSystem String // "WHATSAPP" today; future channels reuse this table
+  phone        String?
+  email        String?
+  companyName  String?
+  sourceMetadata Json
+
+  status     String    @default("PENDING") // PENDING | PROCESSED | DLQ
+  dlqReason  String?
+  processedAt DateTime?
+  receivedAt  DateTime @default(now())
+
+  @@index([orgId, status])
+  @@index([receivedAt])
+}
+
+// Immutable audit trail for revealing a masked Contact field (Gap 18).
+model PiiViewLog {
+  id            String   @id @default(uuid())
+  orgId         String
+  userId        String
+  contactId     String
+  contact       Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  fieldUnmasked String // "phone" | "email"
+  reason        String?
+  viewedAt      DateTime @default(now())
+
+  @@index([orgId, userId, viewedAt])
+  @@index([contactId])
+}
+
+// Immutable field-level shadow diff (Gap 21) — every PUT /contacts/:id write
+// logs one row per changed field, before the update commits. Detects stealth
+// data tampering that the coarser AuditLog.changes JSON blob doesn't surface
+// field-by-field.
+model LeadFieldDiff {
+  id               String   @id @default(uuid())
+  orgId            String
+  contactId        String
+  contact          Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  modifiedByUserId String
+  fieldName        String
+  oldValue         String?
+  newValue         String?
+  createdAt        DateTime @default(now())
+
+  @@index([contactId])
+  @@index([orgId, createdAt])
+}
+
+// Anti-gaming flags (Gap 22) — velocity spikes, CTI/manual call-duration
+// mismatches, and lock-acquire spam surfaced for manager review rather than
+// auto-blocking (false positives are cheap to review, expensive to enforce).
+model AnomalyFlag {
+  id           String    @id @default(uuid())
+  orgId        String
+  userId       String
+  contactId    String?
+  contact      Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  flagType     String // VELOCITY_SPIKE | DURATION_MISMATCH | MODAL_SPAM
+  severity     String // LOW | MEDIUM | HIGH
+  description  String
+  flaggedAt    DateTime  @default(now())
+  resolvedAt   DateTime?
+  resolvedBy   String?
+  resolution   String?
+
+  @@index([orgId, resolvedAt])
+  @@index([userId])
 }
 
 model Quote {

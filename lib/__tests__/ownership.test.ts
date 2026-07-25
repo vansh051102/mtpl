@@ -1,4 +1,4 @@
-import { buildOwnershipFilter, canAccessLead } from '../ownership'
+import { buildOwnershipFilter, buildOwnershipFilterAsync, canAccessLead, canAccessContact, getUsersInSameTerritoryOrBranch } from '../ownership'
 import { PURCHASE_QUERY_STAGES } from '../lead-stages'
 
 // Reference the shared constant rather than a hand-copied list, so widening or
@@ -8,13 +8,15 @@ const PURCHASE_STAGES = [...PURCHASE_QUERY_STAGES]
 jest.mock('@/lib/db', () => ({
   prisma: {
     lead: { findUnique: jest.fn() },
-    user: { findUnique: jest.fn() },
+    user: { findUnique: jest.fn(), findMany: jest.fn() },
+    contact: { findUnique: jest.fn() },
   },
 }))
 import { prisma } from '@/lib/db'
 const mockPrisma = prisma as unknown as {
   lead: { findUnique: jest.Mock }
-  user: { findUnique: jest.Mock }
+  user: { findUnique: jest.Mock; findMany: jest.Mock }
+  contact: { findUnique: jest.Mock }
 }
 
 describe('buildOwnershipFilter', () => {
@@ -77,6 +79,20 @@ describe('buildOwnershipFilter', () => {
   it('unknown role denies all', () => {
     expect(buildOwnershipFilter(U, 'nonexistent', null, 'leads')).toEqual({ id: '__DENY_ALL__' })
   })
+
+  it('marketing_executive scopes contacts to self (lead-gen "My Queue")', () => {
+    expect(buildOwnershipFilter(U, 'marketing_executive', null, 'contacts')).toEqual({
+      createdById: U,
+    })
+  })
+
+  it('marketing_manager sees all org contacts (no department link on Contact)', () => {
+    expect(buildOwnershipFilter(U, 'marketing_manager', null, 'contacts')).toEqual({})
+  })
+
+  it('admin sees all contacts', () => {
+    expect(buildOwnershipFilter(U, 'admin', null, 'contacts')).toEqual({})
+  })
 })
 
 describe('canAccessLead', () => {
@@ -120,5 +136,131 @@ describe('canAccessLead', () => {
   it('unknown role is denied', async () => {
     mockPrisma.lead.findUnique.mockResolvedValue({ createdById: 'x', assignedToId: 'u', stage: 'New Lead' })
     expect(await canAccessLead('u', 'ghost', 'l')).toBe(false)
+  })
+})
+
+describe('canAccessContact', () => {
+  beforeEach(() => {
+    mockPrisma.contact.findUnique.mockReset()
+    mockPrisma.user.findUnique.mockReset()
+  })
+
+  it('roles with no defined Contact ownership model are permissive without a DB lookup', async () => {
+    expect(await canAccessContact('u', 'admin', 'c-1')).toBe(true)
+    expect(await canAccessContact('u', 'purchase', 'c-1')).toBe(true)
+    expect(await canAccessContact('u', 'sales_purchase', 'c-1')).toBe(true)
+    expect(mockPrisma.contact.findUnique).not.toHaveBeenCalled()
+  })
+
+  it('marketing_executive can access only contacts they created', async () => {
+    mockPrisma.contact.findUnique.mockResolvedValue({ createdById: 'u' })
+    expect(await canAccessContact('u', 'marketing_executive', 'c-1')).toBe(true)
+    mockPrisma.contact.findUnique.mockResolvedValue({ createdById: 'other' })
+    expect(await canAccessContact('u', 'marketing_executive', 'c-1')).toBe(false)
+  })
+
+  it('returns false when the contact does not exist', async () => {
+    mockPrisma.contact.findUnique.mockResolvedValue(null)
+    expect(await canAccessContact('u', 'marketing_executive', 'missing')).toBe(false)
+  })
+
+  it('marketing_manager without territory/branch set is permissive', async () => {
+    mockPrisma.user.findUnique.mockResolvedValue({ orgId: 'o1', territory: null, branch: null })
+    expect(await canAccessContact('u', 'marketing_manager', 'c-1')).toBe(true)
+    expect(mockPrisma.contact.findUnique).not.toHaveBeenCalled()
+  })
+
+  it('marketing_manager with territory set is scoped to territory peers', async () => {
+    mockPrisma.user.findUnique.mockResolvedValueOnce({ orgId: 'o1', territory: 'North', branch: null })
+    mockPrisma.user.findMany.mockResolvedValueOnce([{ id: 'u' }, { id: 'peer' }])
+    mockPrisma.contact.findUnique.mockResolvedValue({ createdById: 'peer' })
+    expect(await canAccessContact('u', 'marketing_manager', 'c-1')).toBe(true)
+
+    mockPrisma.user.findUnique.mockResolvedValueOnce({ orgId: 'o1', territory: 'North', branch: null })
+    mockPrisma.user.findMany.mockResolvedValueOnce([{ id: 'u' }, { id: 'peer' }])
+    mockPrisma.contact.findUnique.mockResolvedValue({ createdById: 'outsider' })
+    expect(await canAccessContact('u', 'marketing_manager', 'c-1')).toBe(false)
+  })
+
+  it('sales_executive can access only contacts linked to their own lead', async () => {
+    mockPrisma.contact.findUnique.mockResolvedValue({ leads: [{ assignedToId: 'u' }] })
+    expect(await canAccessContact('u', 'sales_executive', 'c-1')).toBe(true)
+
+    mockPrisma.contact.findUnique.mockResolvedValue({ leads: [{ assignedToId: 'other' }] })
+    expect(await canAccessContact('u', 'sales_executive', 'c-1')).toBe(false)
+  })
+
+  it('sales_executive cannot access a contact with no linked lead', async () => {
+    mockPrisma.contact.findUnique.mockResolvedValue({ leads: [] })
+    expect(await canAccessContact('u', 'sales_executive', 'c-1')).toBe(false)
+  })
+
+  it('sales_manager can access unassigned or Sales-department-linked contacts', async () => {
+    mockPrisma.contact.findUnique.mockResolvedValue({ leads: [{ assignedToId: null }] })
+    expect(await canAccessContact('u', 'sales_manager', 'c-1')).toBe(true)
+
+    mockPrisma.contact.findUnique.mockResolvedValue({ leads: [{ assignedToId: 'rep' }] })
+    mockPrisma.user.findUnique.mockResolvedValue({ department: 'Sales' })
+    expect(await canAccessContact('u', 'sales_manager', 'c-1')).toBe(true)
+
+    mockPrisma.contact.findUnique.mockResolvedValue({ leads: [{ assignedToId: 'rep' }] })
+    mockPrisma.user.findUnique.mockResolvedValue({ department: 'Marketing' })
+    expect(await canAccessContact('u', 'sales_manager', 'c-1')).toBe(false)
+  })
+})
+
+describe('getUsersInSameTerritoryOrBranch', () => {
+  beforeEach(() => {
+    mockPrisma.user.findUnique.mockReset()
+    mockPrisma.user.findMany.mockReset()
+  })
+
+  it('returns null when the viewer has neither territory nor branch set', async () => {
+    mockPrisma.user.findUnique.mockResolvedValue({ orgId: 'o1', territory: null, branch: null })
+    expect(await getUsersInSameTerritoryOrBranch('u')).toBeNull()
+    expect(mockPrisma.user.findMany).not.toHaveBeenCalled()
+  })
+
+  it('returns null when the viewer does not exist', async () => {
+    mockPrisma.user.findUnique.mockResolvedValue(null)
+    expect(await getUsersInSameTerritoryOrBranch('missing')).toBeNull()
+  })
+
+  it('scopes to peers sharing territory or branch', async () => {
+    mockPrisma.user.findUnique.mockResolvedValue({ orgId: 'o1', territory: 'North', branch: null })
+    mockPrisma.user.findMany.mockResolvedValue([{ id: 'u1' }, { id: 'u2' }])
+    const result = await getUsersInSameTerritoryOrBranch('u1')
+    expect(result).toEqual(['u1', 'u2'])
+    expect(mockPrisma.user.findMany).toHaveBeenCalledWith({
+      where: { orgId: 'o1', status: 'active', OR: [{ territory: 'North' }] },
+      select: { id: true },
+    })
+  })
+})
+
+describe('buildOwnershipFilterAsync — contacts ABAC', () => {
+  beforeEach(() => {
+    mockPrisma.user.findUnique.mockReset()
+    mockPrisma.user.findMany.mockReset()
+  })
+
+  it('marketing_manager falls back to org-wide when no territory/branch configured', async () => {
+    mockPrisma.user.findUnique.mockResolvedValue({ orgId: 'o1', territory: null, branch: null })
+    expect(await buildOwnershipFilterAsync('u', 'marketing_manager', null, 'contacts')).toEqual({})
+  })
+
+  it('marketing_manager scopes to territory peers when configured', async () => {
+    mockPrisma.user.findUnique.mockResolvedValue({ orgId: 'o1', territory: 'North', branch: null })
+    mockPrisma.user.findMany.mockResolvedValue([{ id: 'u' }, { id: 'peer' }])
+    expect(await buildOwnershipFilterAsync('u', 'marketing_manager', null, 'contacts')).toEqual({
+      createdById: { in: ['u', 'peer'] },
+    })
+  })
+
+  it('marketing_executive is unaffected (still self-scoped, no DB lookup)', async () => {
+    expect(await buildOwnershipFilterAsync('u', 'marketing_executive', null, 'contacts')).toEqual({
+      createdById: 'u',
+    })
+    expect(mockPrisma.user.findUnique).not.toHaveBeenCalled()
   })
 })

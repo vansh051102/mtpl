@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/db'
 import { successResponse, withErrorHandler, NotFoundError } from '@/lib/api-response'
 import { validateRequest } from '@/lib/middleware/validate-headers'
-import { PERMISSIONS } from '@/lib/rbac'
+import { canAccessContact, PERMISSIONS } from '@/lib/rbac'
 import { rbacService } from '@/lib/services/rbac.service'
 
 const ACCEPTED_QUOTE_STATUSES = ['accepted']
@@ -19,8 +19,12 @@ export const GET = withErrorHandler(async (req: Request, { params }: Params) => 
   const ctx = await validateRequest(req)
   rbacService.requirePermission(await rbacService.getUserPermissions(ctx.userId), PERMISSIONS.CONTACTS_READ)
 
+  if (!(await canAccessContact(ctx.userId, ctx.role || 'admin', params.id))) {
+    throw new NotFoundError('Contact')
+  }
+
   const contact = await prisma.contact.findFirst({
-    where: { id: params.id, orgId: ctx.orgId },
+    where: { id: params.id, orgId: ctx.orgId, deletedAt: null },
     select: { id: true },
   })
   if (!contact) throw new NotFoundError('Contact')

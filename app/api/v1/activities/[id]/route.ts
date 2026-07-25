@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/db'
 import { logAudit } from '@/lib/audit'
 import { UpdateActivitySchema } from '@/lib/validation'
-import { canAccessLead, PERMISSIONS } from '@/lib/rbac'
+import { canAccessLead, canAccessContact, PERMISSIONS } from '@/lib/rbac'
 import { successResponse, withErrorHandler, NotFoundError, ValidationError } from '@/lib/api-response'
 import { validateRequest } from '@/lib/middleware/validate-headers'
 import { rbacService } from '@/lib/services/rbac.service'
@@ -21,7 +21,12 @@ export const PUT = withErrorHandler(async (req: Request, { params }: Params) => 
 
   const existing = await prisma.activity.findFirst({ where: { id: params.id, orgId } })
   if (!existing) throw new NotFoundError('Activity')
-  if (!(await canAccessLead(ctx.userId, ctx.role, existing.leadId))) {
+  const canAccess = existing.leadId
+    ? await canAccessLead(ctx.userId, ctx.role, existing.leadId)
+    : existing.contactId
+    ? await canAccessContact(ctx.userId, ctx.role, existing.contactId)
+    : false
+  if (!canAccess) {
     throw new NotFoundError('Activity')
   }
 
@@ -57,7 +62,12 @@ export const DELETE = withErrorHandler(async (req: Request, { params }: Params) 
 
   const existing = await prisma.activity.findFirst({ where: { id: params.id, orgId } })
   if (!existing) throw new NotFoundError('Activity')
-  if (!(await canAccessLead(ctx.userId, ctx.role, existing.leadId))) {
+  const canAccess = existing.leadId
+    ? await canAccessLead(ctx.userId, ctx.role, existing.leadId)
+    : existing.contactId
+    ? await canAccessContact(ctx.userId, ctx.role, existing.contactId)
+    : false
+  if (!canAccess) {
     throw new NotFoundError('Activity')
   }
 

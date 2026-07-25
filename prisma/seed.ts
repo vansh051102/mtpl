@@ -57,34 +57,37 @@ async function main() {
 
   console.log(`✓ Users: admin, marketing_exec, sales_exec`)
 
-  // Create test contacts
-  const contact1 = await prisma.contact.upsert({
-    where: { orgId_email: { orgId: org.id, email: 'john@acme.com' } },
-    update: {},
-    create: {
-      orgId: org.id,
-      firstName: 'John',
-      lastName: 'Smith',
-      email: 'john@acme.com',
-      phone: '+1-555-1234',
-      source: 'Website',
-      createdById: adminUser.id,
-    },
-  })
+  // Create test contacts. findFirst + create rather than upsert-by-compound-
+  // unique: (orgId,email) is now a partial index (WHERE deletedAt IS NULL,
+  // see migration 20260726000000), which Prisma can't express as a named
+  // compound-unique input.
+  const contact1 =
+    (await prisma.contact.findFirst({ where: { orgId: org.id, email: 'john@acme.com', deletedAt: null } })) ??
+    (await prisma.contact.create({
+      data: {
+        orgId: org.id,
+        firstName: 'John',
+        lastName: 'Smith',
+        email: 'john@acme.com',
+        phone: '+1-555-1234',
+        source: 'Website',
+        createdById: adminUser.id,
+      },
+    }))
 
-  const contact2 = await prisma.contact.upsert({
-    where: { orgId_email: { orgId: org.id, email: 'jane@widgets.com' } },
-    update: {},
-    create: {
-      orgId: org.id,
-      firstName: 'Jane',
-      lastName: 'Doe',
-      email: 'jane@widgets.com',
-      phone: '+1-555-5678',
-      source: 'LinkedIn',
-      createdById: adminUser.id,
-    },
-  })
+  const contact2 =
+    (await prisma.contact.findFirst({ where: { orgId: org.id, email: 'jane@widgets.com', deletedAt: null } })) ??
+    (await prisma.contact.create({
+      data: {
+        orgId: org.id,
+        firstName: 'Jane',
+        lastName: 'Doe',
+        email: 'jane@widgets.com',
+        phone: '+1-555-5678',
+        source: 'LinkedIn',
+        createdById: adminUser.id,
+      },
+    }))
 
   console.log(`✓ Contacts: john@acme.com, jane@widgets.com`)
 
@@ -202,13 +205,10 @@ async function main() {
       permissions: [
         'leads:read',
         'leads:edit',
-        'leads:assign',
         'contacts:read',
         'activities:create',
         'activities:read',
-        'quotes:create',
         'quotes:read',
-        'quotes:send',
       ],
       description: 'Sales executive permissions',
     },

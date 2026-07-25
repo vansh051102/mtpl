@@ -24,10 +24,12 @@ export async function checkContactDuplicate(
   const email = input.email ? normalizeEmail(input.email) : undefined
   const gstNumber = input.gstNumber?.trim().toUpperCase() || undefined
 
-  const candidates: Array<{ reason: DuplicateReason; where: { orgId: string; phone?: string; email?: string; gstNumber?: string } }> = []
-  if (phone) candidates.push({ reason: 'phone', where: { orgId, phone } })
-  if (gstNumber) candidates.push({ reason: 'gst', where: { orgId, gstNumber } })
-  if (email) candidates.push({ reason: 'email', where: { orgId, email } })
+  // deletedAt: null — a soft-deleted contact's phone/email is free to reuse
+  // (matches the partial unique indexes; see migration 20260726000000).
+  const candidates: Array<{ reason: DuplicateReason; where: { orgId: string; deletedAt: null; phone?: string; email?: string; gstNumber?: string } }> = []
+  if (phone) candidates.push({ reason: 'phone', where: { orgId, deletedAt: null, phone } })
+  if (gstNumber) candidates.push({ reason: 'gst', where: { orgId, deletedAt: null, gstNumber } })
+  if (email) candidates.push({ reason: 'email', where: { orgId, deletedAt: null, email } })
 
   for (const { reason, where } of candidates) {
     const existingContact = await prisma.contact.findFirst({

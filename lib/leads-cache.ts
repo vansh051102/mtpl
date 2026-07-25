@@ -104,12 +104,6 @@ export function setCachedLeads(q: LeadListQuery, result: LeadListResult) {
   notify()
 }
 
-export function invalidateLeadsCache() {
-  cache.clear()
-  inflight.clear()
-  notify()
-}
-
 function buildParams(q: LeadListQuery): URLSearchParams {
   const params = new URLSearchParams()
   if (q.stage) params.set('stage', q.stage)

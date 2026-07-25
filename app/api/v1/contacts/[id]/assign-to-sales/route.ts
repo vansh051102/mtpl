@@ -14,6 +14,7 @@ interface Params {
 const AssignToSalesSchema = z.object({
   assignedToId: z.string().min(1),
   companyName: z.string().min(1),
+  handoffNotes: z.string().min(10, 'Handoff notes must describe the requirement/urgency (min 10 characters)'),
 })
 
 // POST /api/v1/contacts/:id/assign-to-sales
@@ -27,7 +28,7 @@ export const POST = withErrorHandler(async (req: Request, { params }: Params) =>
   rbacService.requirePermission(await rbacService.getUserPermissions(userId), PERMISSIONS.CONTACTS_EDIT)
   rbacService.requirePermission(await rbacService.getUserPermissions(userId), PERMISSIONS.LEADS_CREATE)
 
-  const contact = await prisma.contact.findFirst({ where: { id: params.id, orgId } })
+  const contact = await prisma.contact.findFirst({ where: { id: params.id, orgId, deletedAt: null } })
   if (!contact) throw new NotFoundError('Contact')
 
   const body = await req.json()
@@ -41,6 +42,16 @@ export const POST = withErrorHandler(async (req: Request, { params }: Params) =>
   })
   if (!salesperson) throw new NotFoundError('Salesperson')
 
+  // Validation gate: don't let a handoff through without at least one
+  // Connected call — otherwise Sales gets a lead nobody actually spoke to.
+  const hasConnectedCall = await prisma.activity.findFirst({
+    where: { contactId: contact.id, type: 'call', metadata: { path: ['outcome'], equals: 'Connected' } },
+    select: { id: true },
+  })
+  if (!hasConnectedCall) {
+    throw new ValidationError('Log at least one Connected call with this contact before assigning to sales')
+  }
+
   const assigner = await prisma.user.findUnique({ where: { id: userId } })
 
   const result = await createLeadWithDefaults({
@@ -51,6 +62,7 @@ export const POST = withErrorHandler(async (req: Request, { params }: Params) =>
     assignedToId: salesperson.id,
     createdById: userId,
     creatorRole: ctx.role,
+    notes: parsed.data.handoffNotes,
   })
 
   if (result.duplicate) {
@@ -68,6 +80,10 @@ export const POST = withErrorHandler(async (req: Request, { params }: Params) =>
     contact.id,
     `Assigned to ${salesperson.fullName} as lead ${result.lead.id}`
   )
+  await logAudit(orgId, userId, 'ASSIGN', 'Lead', result.lead.id, result.lead.companyName, {
+    assignedToId: salesperson.id,
+    handoffNotes: parsed.data.handoffNotes,
+  })
 
   return successResponse(result.lead, { statusCode: 201 })
 })
