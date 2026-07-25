@@ -25,8 +25,19 @@ export interface AdvancedLeadFilters {
   serviceArea?: string
   pinCode?: string
   callsCountMin?: string
+  callsCountMax?: string
   messagesCountMin?: string
   inactivityDays?: string
+  productCategory?: string
+  customerSegment?: string
+  // Basic filters already supported server-side (app/api/v1/leads/route.ts)
+  // but not previously exposed on the frontend query — added here (rather
+  // than as new top-level LeadListQuery fields + cache-key lines) so they
+  // ride the existing generic serialization in leadCacheKey/buildParams.
+  status?: string
+  department?: string
+  assignedToId?: string
+  slaBreached?: string
 }
 
 export const EMPTY_ADVANCED_FILTERS: AdvancedLeadFilters = {}

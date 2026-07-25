@@ -24,6 +24,11 @@ export async function logAudit(
         resourceName,
         changes,
         ipAddress,
+        // Direct relation alongside the generic resourceType/resourceId
+        // pattern above. Bulk import/export audit entries use the literal
+        // 'bulk' as resourceId (not a real Lead id) — excluded, or the FK
+        // constraint would reject the insert.
+        ...(resourceType === 'Lead' && resourceId !== 'bulk' && { leadId: resourceId }),
       },
     })
   } catch (error) {

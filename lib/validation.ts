@@ -74,6 +74,30 @@ export const CLOSING_HORIZONS = [
   'custom',
 ] as const
 
+export const CUSTOMER_SEGMENTS = [
+  'Trader',
+  'Dealer',
+  'Fabricator',
+  'Contractor',
+  'Infrastructure/Builder',
+  'Industrial End-User',
+  'Government/PSU',
+] as const
+
+// UI-suggested only — Lead.productCategory stays a free-text column
+// (matched with `contains`), so these are convenience options, not an enum.
+// Shared by components/new-lead-form.tsx and app/(app)/leads/page.tsx.
+export const PRODUCT_CATEGORIES = [
+  'Pipes',
+  'Roofing Sheets',
+  'Structural Steel',
+  'Flat Products',
+  'Polycarbonate',
+  'Decking',
+  'C & Z Purlins',
+  'Fasteners/Accessories',
+] as const
+
 export const CreateLeadSchema = z.object({
   contactId: z.string().uuid('Invalid contact ID'),
   companyName: z.string().min(1, 'Company name is required'),
@@ -88,7 +112,15 @@ export const CreateLeadSchema = z.object({
   targetClosingDate: z.coerce.date().optional(),
   territory: z.string().optional(),
   serviceArea: z.string().optional(),
-  pinCode: z.string().optional(),
+  // Indian PIN codes: 6 digits, first digit non-zero. Nullable (not just
+  // optional) — clearing the field, or reading a pre-existing lead with a
+  // legacy free-text value, must not trip validation.
+  pinCode: z.string().regex(/^[1-9][0-9]{5}$/, 'Invalid PIN code').nullable().optional(),
+  productCategory: z.string().optional(),
+  // Nullable (not just optional): clearing an existing lead's segment, or
+  // reading/updating leads created before this column existed, must not
+  // trip validation.
+  customerSegment: z.enum(CUSTOMER_SEGMENTS).nullable().optional(),
 })
 
 export const UpdateLeadSchema = CreateLeadSchema.partial().extend({

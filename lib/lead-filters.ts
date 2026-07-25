@@ -34,8 +34,11 @@ export interface AdvancedLeadFilterParams {
   serviceArea?: string | null
   pinCode?: string | null
   callsCountMin?: string | null
+  callsCountMax?: string | null
   messagesCountMin?: string | null
   inactivityDays?: string | null
+  productCategory?: string | null
+  customerSegment?: string | null
 }
 
 export function parseAdvancedLeadFilters(searchParams: URLSearchParams): AdvancedLeadFilterParams {
@@ -54,8 +57,11 @@ export function parseAdvancedLeadFilters(searchParams: URLSearchParams): Advance
     serviceArea: searchParams.get('serviceArea'),
     pinCode: searchParams.get('pinCode'),
     callsCountMin: searchParams.get('callsCountMin'),
+    callsCountMax: searchParams.get('callsCountMax'),
     messagesCountMin: searchParams.get('messagesCountMin'),
     inactivityDays: searchParams.get('inactivityDays'),
+    productCategory: searchParams.get('productCategory'),
+    customerSegment: searchParams.get('customerSegment'),
   }
 }
 
@@ -119,8 +125,19 @@ export function buildAdvancedLeadWhere(
   if (params.serviceArea) where.serviceArea = params.serviceArea
   if (params.pinCode) where.pinCode = params.pinCode
 
+  if (params.productCategory) {
+    where.productCategory = { contains: params.productCategory, mode: 'insensitive' }
+  }
+  if (params.customerSegment) where.customerSegment = params.customerSegment
+
   const callsCountMin = parseNonNegativeInt(params.callsCountMin, 'callsCountMin')
-  if (callsCountMin !== undefined) where.totalCalls = { gte: callsCountMin }
+  const callsCountMax = parseNonNegativeInt(params.callsCountMax, 'callsCountMax')
+  if (callsCountMin !== undefined || callsCountMax !== undefined) {
+    where.totalCalls = {
+      ...(callsCountMin !== undefined && { gte: callsCountMin }),
+      ...(callsCountMax !== undefined && { lte: callsCountMax }),
+    }
+  }
 
   const messagesCountMin = parseNonNegativeInt(params.messagesCountMin, 'messagesCountMin')
   if (messagesCountMin !== undefined) where.totalMessages = { gte: messagesCountMin }

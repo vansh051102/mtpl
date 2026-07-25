@@ -135,10 +135,16 @@ model AuditLog {
   userAgent    String?
   timestamp    DateTime @default(now())
 
+  // Direct relation alongside the generic resourceType/resourceId pattern
+  // above — populated only when resourceType = 'Lead' (see lib/audit.ts).
+  leadId String?
+  lead   Lead?   @relation(fields: [leadId], references: [id])
+
   @@index([orgId])
   @@index([userId])
   @@index([resourceType, resourceId])
   @@index([timestamp])
+  @@index([leadId])
 }
 
 model Settings {
@@ -282,6 +288,7 @@ model Lead {
   supplierMargin  Decimal? @db.Decimal(5, 2)
   quotationNumber String?
   productCategory String?
+  customerSegment String?
   quotationValue  Decimal? @db.Decimal(12, 2)
   orderValue      Decimal? @db.Decimal(12, 2)
 
@@ -294,6 +301,12 @@ model Lead {
   territory   String?
   serviceArea String?
   pinCode     String?
+
+  // Multi-branch/multi-company readiness — not queried or set by any code
+  // path yet; forward-compatible columns only (see Phase L.3).
+  branchId   String?
+  companyId  String?
+  isArchived Boolean @default(false)
 
   totalCalls    Int @default(0)
   totalMessages Int @default(0)
@@ -335,6 +348,7 @@ model Lead {
   quotes           Quote[]
   purchaseRequests PurchaseRequest[]
   documents        LeadDocument[]
+  auditLogs        AuditLog[]
 
   @@index([orgId])
   @@index([stage])
@@ -484,6 +498,7 @@ model PurchaseRequest {
 
   @@index([leadId])
   @@index([status])
+  @@index([leadId, status])
 }
 
 model LeadDocument {

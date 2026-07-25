@@ -12,6 +12,7 @@ import { buildOwnershipFilter } from '@/lib/ownership'
 import { rbacService } from '@/lib/services/rbac.service'
 import { parseAdvancedLeadFilters, buildAdvancedLeadWhere } from '@/lib/lead-filters'
 import { resolveMaskedFields } from '@/lib/lead-serializer'
+import { DEPARTMENTS, getDepartmentWhereClause } from '@/lib/lead-department'
 
 const HARD_EXPORT_LIMIT = 5000
 const PDF_ROW_CAP = 500
@@ -42,6 +43,7 @@ export const GET = withErrorHandler(async (req: Request) => {
 
   const url = new URL(req.url)
   const stage = url.searchParams.get('stage')
+  const department = url.searchParams.get('department')
   const priority = url.searchParams.get('priority')
   const days = url.searchParams.get('days')
   const search = url.searchParams.get('search')
@@ -62,6 +64,9 @@ export const GET = withErrorHandler(async (req: Request) => {
 
   if (stage && !(LEAD_STAGES as readonly string[]).includes(stage)) {
     throw new ValidationError(`Invalid stage filter: ${stage}`)
+  }
+  if (department && !(DEPARTMENTS as readonly string[]).includes(department)) {
+    throw new ValidationError(`Invalid department filter: ${department}. Allowed: ${DEPARTMENTS.join(', ')}`)
   }
   if (priority && !(LEAD_PRIORITIES as readonly string[]).includes(priority)) {
     throw new ValidationError(`Invalid priority filter: ${priority}`)
@@ -130,6 +135,9 @@ export const GET = withErrorHandler(async (req: Request) => {
       ],
     }),
     ...advancedFilters,
+    // department composed via AND (not spread) for the same reason as the
+    // leads list route — its where-fragment can itself set `stage`.
+    ...(department && { AND: [getDepartmentWhereClause(department)] }),
     ...stageOverride,
   }
 
@@ -192,6 +200,14 @@ export const GET = withErrorHandler(async (req: Request) => {
       'Total Calls',
       'Total Messages',
       'SLA Breached',
+      'SLA Deadline',
+      'Territory',
+      'Service Area',
+      'Pin Code',
+      'Customer Segment',
+      'Product Category',
+      'Closing Horizon',
+      'Target Closing Date',
       'Source',
       'Created At',
       'Last Activity At',
@@ -224,6 +240,14 @@ export const GET = withErrorHandler(async (req: Request) => {
         l.totalCalls,
         l.totalMessages,
         l.slaBreached ? 'yes' : 'no',
+        l.slaDeadline ? l.slaDeadline.toISOString() : '',
+        l.territory ?? '',
+        l.serviceArea ?? '',
+        l.pinCode ?? '',
+        l.customerSegment ?? '',
+        l.productCategory ?? '',
+        l.closingHorizon ?? '',
+        l.targetClosingDate ? l.targetClosingDate.toISOString() : '',
         l.source ?? '',
         l.createdAt.toISOString(),
         l.lastActivityAt.toISOString(),

@@ -19,6 +19,11 @@ import { rbacService } from '@/lib/services/rbac.service'
 import { buildOwnershipFilterAsync, canAccessLead, PERMISSIONS } from '@/lib/rbac'
 import { parseAdvancedLeadFilters, buildAdvancedLeadWhere, ADVANCED_LEAD_SORT_FIELDS } from '@/lib/lead-filters'
 import { resolveMaskedFields, applyLeadFieldMask } from '@/lib/lead-serializer'
+import { DEPARTMENTS, getDepartmentWhereClause } from '@/lib/lead-department'
+
+// Lead.status values set by the stage-change route (app/api/v1/leads/[id]/stage/route.ts)
+// — not previously exposed as a list filter.
+const LEAD_STATUSES = ['open', 'closed_won', 'closed_lost', 'disqualified']
 
 // POST /api/v1/leads - Create a lead (Step 1 of the workflow)
 export const POST = withErrorHandler(async (req) => {
@@ -106,6 +111,9 @@ export const POST = withErrorHandler(async (req) => {
       territory: input.territory,
       serviceArea: input.serviceArea,
       pinCode: input.pinCode,
+      customerSegment: input.customerSegment,
+      productCategory: input.productCategory,
+      requirement: input.requirement,
     })
   } catch (err) {
     if (err instanceof AppError) throw err
@@ -166,6 +174,8 @@ export const GET = withErrorHandler(async (req) => {
   }
 
   const stage = url.searchParams.get('stage')
+  const department = url.searchParams.get('department')
+  const status = url.searchParams.get('status') // open | closed_won | closed_lost | disqualified
   const priority = url.searchParams.get('priority')
   const assignedToId = url.searchParams.get('assignedToId')
   const contactOutcome = url.searchParams.get('contactOutcome') // connected | not_received
@@ -195,6 +205,12 @@ export const GET = withErrorHandler(async (req) => {
 
   if (stage && !(LEAD_STAGES as readonly string[]).includes(stage)) {
     throw new ValidationError(`Invalid stage filter: ${stage}`)
+  }
+  if (department && !(DEPARTMENTS as readonly string[]).includes(department)) {
+    throw new ValidationError(`Invalid department filter: ${department}. Allowed: ${DEPARTMENTS.join(', ')}`)
+  }
+  if (status && !LEAD_STATUSES.includes(status)) {
+    throw new ValidationError(`Invalid status filter: ${status}. Allowed: ${LEAD_STATUSES.join(', ')}`)
   }
   if (priority && !(LEAD_PRIORITIES as readonly string[]).includes(priority)) {
     throw new ValidationError(`Invalid priority filter: ${priority}`)
@@ -232,6 +248,7 @@ export const GET = withErrorHandler(async (req) => {
     ...(contactOutcome === 'connected' && { contactOutcome: 'connected' }),
     ...(contactOutcome === 'not_received' && { NOT: { contactOutcome: 'connected' } }),
     ...(slaBreached === 'true' && { slaBreached: true }),
+    ...(status && { status }),
     ...((days || from || to) && {
       createdAt: {
         ...(days && { gte: new Date(Date.now() - Number(days) * 24 * 60 * 60 * 1000) }),
@@ -246,6 +263,10 @@ export const GET = withErrorHandler(async (req) => {
       ],
     }),
     ...advancedFilters,
+    // AND, not spread — department's where-fragment can itself set `stage`
+    // (e.g. Sales -> Qualified), which would silently clobber an ambient
+    // `stage` param key if spread at the top level. AND composes both.
+    ...(department && { AND: [getDepartmentWhereClause(department)] }),
   }
 
   const [leads, total] = await Promise.all([
@@ -268,6 +289,10 @@ export const GET = withErrorHandler(async (req) => {
           orderBy: { createdAt: 'desc' },
           take: 1,
         },
+        // Bounded (a lead has at most a handful of PRs) — feeds the
+        // client-side department badge (lib/lead-department.ts), not
+        // pagination-sensitive like activities/quotes above.
+        purchaseRequests: { select: { status: true } },
       },
     }),
     prisma.lead.count({ where }),

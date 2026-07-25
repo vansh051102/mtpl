@@ -26,8 +26,9 @@ import { useToast } from '@/components/ui/toast'
 import { NewLeadForm } from '@/components/new-lead-form'
 import { useCurrentUser } from '@/lib/use-current-user'
 import { PermissionGate } from '@/components/permission-gate'
-import { LEAD_PRIORITIES } from '@/lib/validation'
+import { LEAD_PRIORITIES, CUSTOMER_SEGMENTS, PRODUCT_CATEGORIES } from '@/lib/validation'
 import { leadTabsForRole } from '@/lib/lead-stages'
+import { SMART_VIEWS, CURRENT_USER_SENTINEL } from '@/lib/lead-smart-views'
 import { cn } from '@/lib/utils'
 import {
   fetchLeads,
@@ -47,6 +48,59 @@ const DAY_FILTERS = [
 ]
 
 const LEAD_SOURCES = ['Website', 'LinkedIn', 'Referral', 'Email', 'Phone', 'Other']
+
+const INACTIVITY_PRESETS = [
+  { label: '0–1 day', value: '1' },
+  { label: '2–3 days', value: '3' },
+  { label: '4–7 days', value: '7' },
+  { label: '1–2 weeks', value: '14' },
+  { label: '15–30 days', value: '30' },
+  { label: '30–60 days', value: '60' },
+  { label: '90+ days', value: '90' },
+]
+
+const DENSITY_PRESETS = [
+  { label: 'Never contacted', value: '0' },
+  { label: 'First call made', value: '1' },
+  { label: 'Multiple interactions', value: '2' },
+]
+
+const DATE_RANGE_PRESETS = [
+  { label: 'Today', getRange: () => rangeFromDaysAgo(0) },
+  { label: 'Yesterday', getRange: () => rangeFromDaysAgo(1, 1) },
+  { label: 'This month', getRange: () => rangeFromMonthStart(0) },
+  { label: 'Last month', getRange: () => rangeFromMonthStart(1, 1) },
+  { label: 'This quarter', getRange: () => rangeFromQuarterStart() },
+] as const
+
+function toDateInputValue(d: Date): string {
+  return d.toISOString().slice(0, 10)
+}
+
+/** Inclusive day range starting `startDaysAgo` days back, ending `endDaysAgo` days back. */
+function rangeFromDaysAgo(endDaysAgo: number, startDaysAgo = endDaysAgo): { from: string; to: string } {
+  const now = new Date()
+  const from = new Date(now)
+  from.setDate(now.getDate() - startDaysAgo)
+  const to = new Date(now)
+  to.setDate(now.getDate() - endDaysAgo)
+  return { from: toDateInputValue(from), to: toDateInputValue(to) }
+}
+
+/** monthsAgoStart/monthsAgoEnd: 0 = current month. 1,1 = last month only. */
+function rangeFromMonthStart(monthsAgoStart: number, monthsAgoEnd = 0): { from: string; to: string } {
+  const now = new Date()
+  const from = new Date(now.getFullYear(), now.getMonth() - monthsAgoStart, 1)
+  const to = new Date(now.getFullYear(), now.getMonth() - monthsAgoEnd + 1, 0)
+  return { from: toDateInputValue(from), to: toDateInputValue(to) }
+}
+
+function rangeFromQuarterStart(): { from: string; to: string } {
+  const now = new Date()
+  const quarterStartMonth = Math.floor(now.getMonth() / 3) * 3
+  const from = new Date(now.getFullYear(), quarterStartMonth, 1)
+  return { from: toDateInputValue(from), to: toDateInputValue(now) }
+}
 const WEEKDAYS = [
   { value: 1, label: 'Mon' },
   { value: 2, label: 'Tue' },
@@ -351,6 +405,28 @@ export default function LeadsPage() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
+
+  const [activeSmartView, setActiveSmartView] = useState<string | null>(null)
+
+  function applySmartView(view: (typeof SMART_VIEWS)[number]) {
+    setPage(1)
+    setActiveSmartView((v) => (v === view.id ? null : view.id))
+    if (activeSmartView === view.id) {
+      // Toggle off — clear back to no filters rather than leaving a stale combo.
+      setStage('')
+      setDays('')
+      setAdvancedFilters({})
+      return
+    }
+    setStage(view.filters.stage ?? '')
+    setDays(view.filters.days ?? '')
+    setContactOutcome('')
+    const resolved = { ...view.filters.advanced }
+    if (resolved.assignedToId === CURRENT_USER_SENTINEL) {
+      resolved.assignedToId = me?.id
+    }
+    setAdvancedFilters(resolved)
+  }
 
   function handleSort(column: SortBy) {
     if (sortBy === column) {
@@ -785,6 +861,199 @@ export default function LeadsPage() {
               />
             </div>
           ))}
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground" htmlFor="adv-productCategory">
+              Product category
+            </label>
+            <select
+              id="adv-productCategory"
+              value={advancedFilters.productCategory ?? ''}
+              onChange={(e) => {
+                setPage(1)
+                setAdvancedFilters((f) => ({ ...f, productCategory: e.target.value || undefined }))
+              }}
+              className="crm-input h-8"
+            >
+              <option value="">Any</option>
+              {PRODUCT_CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground" htmlFor="adv-customerSegment">
+              Customer segment
+            </label>
+            <select
+              id="adv-customerSegment"
+              value={advancedFilters.customerSegment ?? ''}
+              onChange={(e) => {
+                setPage(1)
+                setAdvancedFilters((f) => ({ ...f, customerSegment: e.target.value || undefined }))
+              }}
+              className="crm-input h-8"
+            >
+              <option value="">Any</option>
+              {CUSTOMER_SEGMENTS.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="col-span-full flex flex-col gap-1.5">
+            <span className="text-xs text-muted-foreground">Inactive for</span>
+            <div className="flex flex-wrap gap-1.5">
+              {INACTIVITY_PRESETS.map((p) => (
+                <button
+                  key={p.value}
+                  type="button"
+                  onClick={() => {
+                    setPage(1)
+                    setAdvancedFilters((f) => ({
+                      ...f,
+                      inactivityDays: f.inactivityDays === p.value ? undefined : p.value,
+                    }))
+                  }}
+                  className={cn(
+                    'crm-chip',
+                    advancedFilters.inactivityDays === p.value ? 'crm-chip-active' : 'crm-chip-idle'
+                  )}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="col-span-full flex flex-col gap-1.5">
+            <span className="text-xs text-muted-foreground">Call/message density</span>
+            <div className="flex flex-wrap gap-1.5">
+              {DENSITY_PRESETS.map((p) => (
+                <button
+                  key={p.value}
+                  type="button"
+                  onClick={() => {
+                    setPage(1)
+                    setAdvancedFilters((f) => ({
+                      ...f,
+                      callsCountMin: f.callsCountMin === p.value ? undefined : p.value,
+                    }))
+                  }}
+                  className={cn(
+                    'crm-chip',
+                    advancedFilters.callsCountMin === p.value ? 'crm-chip-active' : 'crm-chip-idle'
+                  )}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="col-span-full flex flex-col gap-1.5">
+            <span className="text-xs text-muted-foreground">Date range</span>
+            <div className="flex flex-wrap gap-1.5">
+              {DATE_RANGE_PRESETS.map((p) => (
+                <button
+                  key={p.label}
+                  type="button"
+                  onClick={() => {
+                    const { from, to } = p.getRange()
+                    setPage(1)
+                    setDays('')
+                    setFromDate(from)
+                    setToDate(to)
+                  }}
+                  className={cn('crm-chip', 'crm-chip-idle')}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground" htmlFor="adv-department">
+              Department
+            </label>
+            <select
+              id="adv-department"
+              value={advancedFilters.department ?? ''}
+              onChange={(e) => {
+                setPage(1)
+                setAdvancedFilters((f) => ({ ...f, department: e.target.value || undefined }))
+              }}
+              className="crm-input h-8"
+            >
+              <option value="">Any</option>
+              <option value="Marketing">Marketing</option>
+              <option value="Sales">Sales</option>
+              <option value="Purchase">Purchase</option>
+              <option value="Quotation">Quotation</option>
+              <option value="Order">Order</option>
+              <option value="Closed">Closed</option>
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground" htmlFor="adv-status">
+              Status
+            </label>
+            <select
+              id="adv-status"
+              value={advancedFilters.status ?? ''}
+              onChange={(e) => {
+                setPage(1)
+                setAdvancedFilters((f) => ({ ...f, status: e.target.value || undefined }))
+              }}
+              className="crm-input h-8"
+            >
+              <option value="">Any</option>
+              <option value="open">Open</option>
+              <option value="closed_won">Closed Won</option>
+              <option value="closed_lost">Closed Lost</option>
+              <option value="disqualified">Disqualified</option>
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground" htmlFor="adv-assignedTo">
+              Assigned to
+            </label>
+            <select
+              id="adv-assignedTo"
+              value={advancedFilters.assignedToId ?? ''}
+              onChange={(e) => {
+                setPage(1)
+                setAdvancedFilters((f) => ({ ...f, assignedToId: e.target.value || undefined }))
+              }}
+              className="crm-input h-8"
+            >
+              <option value="">Anyone</option>
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.fullName}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-end gap-2 pb-1.5">
+            <label className="flex items-center gap-1.5 text-sm">
+              <input
+                type="checkbox"
+                checked={advancedFilters.slaBreached === 'true'}
+                onChange={(e) => {
+                  setPage(1)
+                  setAdvancedFilters((f) => ({ ...f, slaBreached: e.target.checked ? 'true' : undefined }))
+                }}
+                className="h-4 w-4 rounded border-border"
+              />
+              SLA breached only
+            </label>
+          </div>
+
           <div className="col-span-full">
             <Button size="sm" variant="ghost" onClick={() => setAdvancedFilters({})}>
               Clear advanced filters
@@ -792,6 +1061,21 @@ export default function LeadsPage() {
           </div>
         </div>
       )}
+
+      <section aria-label="Smart views" className="overflow-x-auto">
+        <div className="flex min-w-max gap-1.5">
+          {SMART_VIEWS.map((view) => (
+            <button
+              key={view.id}
+              type="button"
+              onClick={() => applySmartView(view)}
+              className={cn('crm-chip', activeSmartView === view.id ? 'crm-chip-active' : 'crm-chip-idle')}
+            >
+              {view.label}
+            </button>
+          ))}
+        </div>
+      </section>
 
       <section aria-label="Lead stage filters" className="overflow-x-auto">
         <div className="flex min-w-max gap-1" role="tablist">

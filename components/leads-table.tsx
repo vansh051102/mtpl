@@ -1,12 +1,14 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { Fragment, useRef, useState } from 'react'
 import { Hand, Phone, MessageSquare, BellRing } from 'lucide-react'
 import { api } from '@/lib/api-client'
 import { toFormErrors } from '@/lib/form-errors'
-import { otherStages } from '@/lib/lead-stages'
+import { otherStages, nextValidStages, isOutOfSequence } from '@/lib/lead-stages'
 import { LEAD_PRIORITIES } from '@/lib/validation'
+import { getLeadDepartment } from '@/lib/lead-department'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { statusPillClass } from '@/components/ui/status-pill'
 import { useToast } from '@/components/ui/toast'
 import { cn, formatDate } from '@/lib/utils'
@@ -33,6 +35,8 @@ export interface LeadRow {
   lastActivityLabel?: string | null
   stageDetails?: string | null
   quotationNumber?: string | null
+  purchaseRequests?: { status: string }[]
+  targetClosingDate?: string | null
 }
 
 type DrawerTarget = {
@@ -143,6 +147,9 @@ export function LeadsTable({
   const { toast } = useToast()
   const [busyId, setBusyId] = useState<string | null>(null)
   const [drawer, setDrawer] = useState<DrawerTarget | null>(null)
+  const [expandedRowId, setExpandedRowId] = useState<string | null>(null)
+  const [pendingStageChange, setPendingStageChange] = useState<{ leadId: string; stage: string } | null>(null)
+  const [pendingReason, setPendingReason] = useState('')
   const [hoveredLeadId, setHoveredLeadId] = useState<string | null>(null)
   const [popoverAnchor, setPopoverAnchor] = useState<PopoverAnchor | null>(null)
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -188,8 +195,12 @@ export function LeadsTable({
     }
   }
 
-  function changeStage(lead: LeadRow, stage: string) {
-    inlineUpdate(lead, () => api.put(`/leads/${lead.id}/stage`, { stage }), `Moved to ${stage}`)
+  function changeStage(lead: LeadRow, stage: string, reason?: string) {
+    inlineUpdate(
+      lead,
+      () => api.put(`/leads/${lead.id}/stage`, { stage, ...(reason && { reason }) }),
+      `Moved to ${stage}`
+    )
   }
 
   function changePriority(lead: LeadRow, priority: string) {
@@ -200,8 +211,23 @@ export function LeadsTable({
     inlineUpdate(lead, () => api.put(`/leads/${lead.id}/assign`, { assignedToId }), 'Lead reassigned')
   }
 
-  function inlineStageOptions(stage: string): string[] {
-    return otherStages(stage).filter((s) => s !== 'Deal Lost' && s !== 'Disqualified')
+  function changeFollowUpDate(lead: LeadRow, targetClosingDate: string) {
+    inlineUpdate(
+      lead,
+      () => api.put(`/leads/${lead.id}`, { targetClosingDate: targetClosingDate || null }),
+      'Follow-up date updated'
+    )
+  }
+
+  // In-sequence options come from the same SOP graph the full stage-change
+  // form (lead-stage-control.tsx) enforces — picking one of these always
+  // succeeds. Everything else offered here is an out-of-sequence jump,
+  // which the backend accepts but only with a reason (see pendingStageChange).
+  function inlineStageOptions(stage: string): { inSequence: string[]; outOfSequence: string[] } {
+    const allOffered = otherStages(stage).filter((s) => s !== 'Deal Lost' && s !== 'Disqualified')
+    const inSequence = nextValidStages(stage).filter((s) => allOffered.includes(s))
+    const outOfSequence = allOffered.filter((s) => !inSequence.includes(s))
+    return { inSequence, outOfSequence }
   }
 
   if (data.length === 0) {
@@ -250,9 +276,9 @@ export function LeadsTable({
 
       <div className="hidden overflow-x-auto rounded-lg border border-border bg-card md:block">
         <table className="w-full min-w-[1100px] text-sm">
-          <thead className="sticky top-0 z-10 border-b border-border bg-card text-left text-muted-foreground">
+          <thead className="sticky top-0 z-20 border-b border-border bg-card text-left text-muted-foreground">
             <tr>
-              <th className="w-10 px-3 py-2.5">
+              <th className="sticky left-0 z-20 w-10 bg-card px-3 py-2.5">
                 <input
                   type="checkbox"
                   checked={allSelected}
@@ -261,32 +287,40 @@ export function LeadsTable({
                   className="h-4 w-4 rounded border-border"
                 />
               </th>
-              <th className="whitespace-nowrap px-3 py-2.5 font-medium">Source & Lead</th>
+              <th className="sticky left-10 z-20 min-w-[200px] whitespace-nowrap bg-card px-3 py-2.5 font-medium">
+                Source & Lead
+              </th>
               <th className="whitespace-nowrap px-3 py-2.5 font-medium">Contact</th>
               <th className="whitespace-nowrap px-3 py-2.5 font-medium">Stage</th>
+              <th className="whitespace-nowrap px-3 py-2.5 font-medium">Department</th>
               <th className="whitespace-nowrap px-3 py-2.5 font-medium">Stage details</th>
               <th className="whitespace-nowrap px-3 py-2.5 font-medium">Priority</th>
               <th className="whitespace-nowrap px-3 py-2.5 font-medium">Assigned to</th>
+              <th className="whitespace-nowrap px-3 py-2.5 font-medium">Follow-up</th>
               <th className="whitespace-nowrap px-3 py-2.5 font-medium">Last activity</th>
-              <th className="whitespace-nowrap px-3 py-2.5 text-right font-medium">Actions</th>
+              <th className="sticky right-0 z-20 whitespace-nowrap bg-card px-3 py-2.5 text-right font-medium">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody>
             {data.map((lead) => {
-              const stageOptions = inlineStageOptions(lead.stage)
+              const { inSequence, outOfSequence } = inlineStageOptions(lead.stage)
+              const stageOptions = [...inSequence, ...outOfSequence]
+              const isPendingThisLead = pendingStageChange?.leadId === lead.id
               const busy = busyId === lead.id
               const priorityValue = lead.priority || 'Unassigned'
               const activityLabel = lead.lastActivityLabel || 'Updated'
               const displayName = lead.companyName?.trim() || 'Unnamed lead'
 
               return (
+                <Fragment key={lead.id}>
                 <tr
-                  key={lead.id}
                   className="border-t border-border hover:bg-muted/40"
                   onMouseEnter={(e) => handleRowEnter(lead.id, e.clientX, e.clientY)}
                   onMouseLeave={handleRowLeave}
                 >
-                  <td className="crm-table-cell">
+                  <td className="crm-table-cell sticky left-0 z-10 bg-card">
                     <input
                       type="checkbox"
                       checked={selected.has(lead.id)}
@@ -295,15 +329,28 @@ export function LeadsTable({
                       className="h-4 w-4 rounded border-border"
                     />
                   </td>
-                  <td className="crm-table-cell">
-                    <button
-                      type="button"
-                      onClick={() => openLead(lead)}
-                      className="flex items-center gap-2 text-left"
-                    >
-                      <SourceGlyph source={lead.source} />
-                      <span className="font-medium text-foreground hover:underline">{displayName}</span>
-                    </button>
+                  <td className="crm-table-cell sticky left-10 z-10 min-w-[200px] bg-card">
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setExpandedRowId((id) => (id === lead.id ? null : lead.id))}
+                        aria-label={expandedRowId === lead.id ? `Collapse ${displayName}` : `Expand ${displayName}`}
+                        aria-expanded={expandedRowId === lead.id}
+                        className="text-muted-foreground hover:text-foreground"
+                      >
+                        <span className={cn('inline-block transition-transform', expandedRowId === lead.id && 'rotate-90')}>
+                          ▶
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openLead(lead)}
+                        className="flex items-center gap-2 text-left"
+                      >
+                        <SourceGlyph source={lead.source} />
+                        <span className="font-medium text-foreground hover:underline">{displayName}</span>
+                      </button>
+                    </div>
                   </td>
                   <td className="crm-table-cell">
                     {lead.contact ? (
@@ -339,20 +386,78 @@ export function LeadsTable({
                         <select
                           value={lead.stage}
                           disabled={busy}
-                          onChange={(e) => changeStage(lead, e.target.value)}
+                          onChange={(e) => {
+                            const stage = e.target.value
+                            if (isOutOfSequence(lead.stage, stage)) {
+                              setPendingReason('')
+                              setPendingStageChange({ leadId: lead.id, stage })
+                            } else {
+                              changeStage(lead, stage)
+                            }
+                          }}
                           aria-label={`Stage for ${displayName}`}
                           className={cn(pillSelectClass, statusPillClass('stage', lead.stage))}
                         >
                           <option value={lead.stage}>{lead.stage}</option>
-                          {stageOptions.map((s) => (
-                            <option key={s} value={s}>
-                              {s}
-                            </option>
-                          ))}
+                          {inSequence.length > 0 && (
+                            <optgroup label="Next steps">
+                              {inSequence.map((s) => (
+                                <option key={s} value={s}>
+                                  {s}
+                                </option>
+                              ))}
+                            </optgroup>
+                          )}
+                          {outOfSequence.length > 0 && (
+                            <optgroup label="Skip sequence (reason required)">
+                              {outOfSequence.map((s) => (
+                                <option key={s} value={s}>
+                                  {s}
+                                </option>
+                              ))}
+                            </optgroup>
+                          )}
                         </select>
+                      )}
+                      {isPendingThisLead && (
+                        <div className="flex flex-col gap-1 rounded-md border border-amber-400/50 bg-amber-50 p-1.5 dark:bg-amber-950/30">
+                          <span className="text-[11px] text-amber-800 dark:text-amber-300">
+                            Skipping to {pendingStageChange.stage} — reason required
+                          </span>
+                          <input
+                            autoFocus
+                            value={pendingReason}
+                            onChange={(e) => setPendingReason(e.target.value)}
+                            placeholder="Reason…"
+                            className="h-6 rounded border border-border bg-background px-1.5 text-[11px] outline-none focus:ring-1 focus:ring-ring"
+                          />
+                          <div className="flex gap-1">
+                            <button
+                              type="button"
+                              disabled={!pendingReason.trim()}
+                              onClick={() => {
+                                changeStage(lead, pendingStageChange.stage, pendingReason.trim())
+                                setPendingStageChange(null)
+                              }}
+                              className="rounded bg-primary px-1.5 py-0.5 text-[11px] font-medium text-primary-foreground disabled:opacity-50"
+                            >
+                              Confirm
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setPendingStageChange(null)}
+                              className="rounded border border-border px-1.5 py-0.5 text-[11px]"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
                       )}
                       <span className="text-[11px] text-muted-foreground">• {activityLabel}</span>
                     </div>
+                  </td>
+                  <td className="crm-table-cell">
+                    <Badge variant="default">{getLeadDepartment(lead)}</Badge>
                   </td>
                   <td className="crm-table-cell">
                     <span className="text-muted-foreground">{lead.stageDetails || 'No stage details'}</span>
@@ -390,6 +495,16 @@ export function LeadsTable({
                     </select>
                   </td>
                   <td className="crm-table-cell">
+                    <input
+                      type="date"
+                      value={lead.targetClosingDate ? lead.targetClosingDate.slice(0, 10) : ''}
+                      disabled={busy}
+                      onChange={(e) => changeFollowUpDate(lead, e.target.value)}
+                      aria-label={`Follow-up date for ${displayName}`}
+                      className="h-7 w-[130px] rounded-md border border-border bg-background px-1.5 text-xs outline-none focus:ring-2 focus:ring-ring"
+                    />
+                  </td>
+                  <td className="crm-table-cell">
                     <div className="flex min-w-[140px] flex-col gap-1">
                       <span className="text-muted-foreground">
                         {activityLabel}: {shortDate(lead.lastActivityAt)}
@@ -403,7 +518,7 @@ export function LeadsTable({
                       )}
                     </div>
                   </td>
-                  <td className="crm-table-cell">
+                  <td className="crm-table-cell sticky right-0 z-10 bg-card">
                     <div className="flex flex-col items-end gap-1.5">
                       <button
                         type="button"
@@ -449,6 +564,45 @@ export function LeadsTable({
                     </div>
                   </td>
                 </tr>
+                {expandedRowId === lead.id && (
+                  <tr className="border-t border-border bg-muted/20">
+                    {/* Uses the row's already-fetched data — no second fetch;
+                        the drawer (opened via the company-name button) remains
+                        the full detail view. */}
+                    <td colSpan={11} className="px-4 py-3 text-sm">
+                      <div className="flex flex-wrap gap-x-8 gap-y-2">
+                        <div>
+                          <p className="text-xs text-muted-foreground">Contact</p>
+                          <p>
+                            {lead.contact
+                              ? `${lead.contact.firstName} ${lead.contact.lastName} · ${lead.contact.email || lead.contact.phone || '—'}`
+                              : '—'}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Latest quote</p>
+                          <p>
+                            {lead.latestQuote
+                              ? `${lead.latestQuote.quoteNumber} (${lead.latestQuote.status})`
+                              : lead.quotationNumber || 'None'}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Stage details</p>
+                          <p>{lead.stageDetails || 'No stage details'}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Recent activity</p>
+                          <p>{activityLabel}</p>
+                        </div>
+                        <Button size="sm" variant="outline" onClick={() => openLead(lead)}>
+                          Open full detail
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               )
             })}
           </tbody>

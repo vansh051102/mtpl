@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { api, ApiError } from '@/lib/api-client'
 import { toFormErrors } from '@/lib/form-errors'
 import { Button } from '@/components/ui/button'
-import { LEAD_PRIORITIES, CLOSING_HORIZONS } from '@/lib/validation'
+import { LEAD_PRIORITIES, CLOSING_HORIZONS, CUSTOMER_SEGMENTS, PRODUCT_CATEGORIES } from '@/lib/validation'
 import { useCurrentUser } from '@/lib/use-current-user'
 
 interface ContactOption {
@@ -55,6 +55,8 @@ export function NewLeadForm({ onCreated }: { onCreated: (leadId: string) => void
   const [territory, setTerritory] = useState('')
   const [serviceArea, setServiceArea] = useState('')
   const [pinCode, setPinCode] = useState('')
+  const [customerSegment, setCustomerSegment] = useState<(typeof CUSTOMER_SEGMENTS)[number] | ''>('')
+  const [productCategory, setProductCategory] = useState('')
 
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
@@ -123,6 +125,8 @@ export function NewLeadForm({ onCreated }: { onCreated: (leadId: string) => void
         territory: territory || undefined,
         serviceArea: serviceArea || undefined,
         pinCode: pinCode || undefined,
+        customerSegment: customerSegment || undefined,
+        productCategory: productCategory || undefined,
         ...(opts.repeatOfLeadId && { sourceDetails: { repeatOf: opts.repeatOfLeadId } }),
       })
       onCreated(leadRes.data!.id)
@@ -499,6 +503,45 @@ export function NewLeadForm({ onCreated }: { onCreated: (leadId: string) => void
             onChange={(e) => setPinCode(e.target.value)}
             className="h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
           />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="lead-customer-segment" className="text-sm font-medium">
+            Customer segment (optional)
+          </label>
+          <select
+            id="lead-customer-segment"
+            value={customerSegment}
+            onChange={(e) => setCustomerSegment(e.target.value as (typeof CUSTOMER_SEGMENTS)[number] | '')}
+            className="h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
+          >
+            <option value="">Not set</option>
+            {CUSTOMER_SEGMENTS.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="lead-product-category" className="text-sm font-medium">
+            Product category (optional)
+          </label>
+          <select
+            id="lead-product-category"
+            value={productCategory}
+            onChange={(e) => setProductCategory(e.target.value)}
+            className="h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"
+          >
+            <option value="">Not set</option>
+            {PRODUCT_CATEGORIES.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 

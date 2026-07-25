@@ -26,7 +26,14 @@ export interface CreateLeadInput {
   targetClosingDate?: Date
   territory?: string
   serviceArea?: string
-  pinCode?: string
+  pinCode?: string | null
+  quotationValue?: number
+  orderValue?: number
+  customerSegment?: string | null
+  productCategory?: string
+  requirement?: string
+  quotationNumber?: string
+  supplierMargin?: number
 }
 
 export type CreateLeadResult =
@@ -118,6 +125,13 @@ export async function createLeadWithDefaults(input: CreateLeadInput): Promise<Cr
         territory: input.territory,
         serviceArea: input.serviceArea,
         pinCode: input.pinCode,
+        quotationValue: input.quotationValue,
+        orderValue: input.orderValue,
+        customerSegment: input.customerSegment,
+        productCategory: input.productCategory,
+        requirement: input.requirement,
+        quotationNumber: input.quotationNumber,
+        supplierMargin: input.supplierMargin,
         stage,
         stageChangedAt: now,
         slaCreatedAt: now,
