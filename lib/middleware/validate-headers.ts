@@ -88,6 +88,14 @@ async function loadUserContext(userId: string, expectedOrgId?: string | null): P
       throw new UnauthorizedError(`Account is ${user.status} — contact your administrator`)
     }
 
+    // Presence signal for the CEO Command Center's live employee status: this
+    // runs once per USER_TTL_MS window (cache hits above skip straight past
+    // it), so it's a cheap way to know "active in the last 30s" without a
+    // dedicated heartbeat endpoint. Never blocks the response on failure.
+    prisma.user
+      .update({ where: { id: userId }, data: { lastLogin: new Date(), liveAvailability: 'ONLINE' } })
+      .catch(() => {})
+
     const ctx: RequestContext = {
       userId: user.id,
       orgId: user.orgId,
