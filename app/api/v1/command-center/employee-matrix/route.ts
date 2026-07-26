@@ -1,8 +1,8 @@
 import { prisma } from '@/lib/db'
 import { successResponse, withErrorHandler } from '@/lib/api-response'
 import { validateRequestWithRole } from '@/lib/middleware/validate-headers'
+import { resolveEmployeeStatuses } from '@/lib/employee-status'
 
-const ONLINE_STALE_MS = 15 * 60 * 1000
 const MATRIX_ROLES = ['admin', 'sales_manager', 'marketing_manager']
 
 function todayBucket(): string {
@@ -38,6 +38,8 @@ export const GET = withErrorHandler(async (req: Request) => {
     orderBy: { fullName: 'asc' },
   })
   if (users.length === 0) return successResponse([])
+
+  const statuses = await resolveEmployeeStatuses(ctx.orgId, users)
 
   const userIds = users.map((u) => u.id)
   const bucket = todayBucket()
@@ -102,10 +104,7 @@ export const GET = withErrorHandler(async (req: Request) => {
       department: u.department,
       designation: u.designation,
       role: u.role,
-      liveAvailability:
-        u.liveAvailability === 'ONLINE' && u.lastLogin && Date.now() - u.lastLogin.getTime() < ONLINE_STALE_MS
-          ? 'ONLINE'
-          : 'OFFLINE',
+      status: statuses.get(u.id) ?? 'OFFLINE',
       kraScore,
       slaPct: total > 0 ? Math.round(((total - breached) / total) * 100) : null,
     }

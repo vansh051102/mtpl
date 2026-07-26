@@ -37,22 +37,24 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users             User[]
-  roles             Role[]
-  auditLogs         AuditLog[]
-  settings          Settings?
-  leads             Lead[]
-  contacts          Contact[]
-  masters           Master[]
-  messageTemplates  MessageTemplate[]
-  slaClocks         SlaClock[]
-  slaRules          SlaRule[]
-  businessCalendars BusinessCalendar[]
-  kpiSnapshots      KpiSnapshot[]
-  kraDefinitions    KraDefinition[]
-  timelines         Timeline[]
-  webhookPayloads   WebhookPayload[]
+  users                     User[]
+  roles                     Role[]
+  auditLogs                 AuditLog[]
+  settings                  Settings?
+  leads                     Lead[]
+  contacts                  Contact[]
+  masters                   Master[]
+  messageTemplates          MessageTemplate[]
+  slaClocks                 SlaClock[]
+  slaRules                  SlaRule[]
+  businessCalendars         BusinessCalendar[]
+  kpiSnapshots              KpiSnapshot[]
+  kraDefinitions            KraDefinition[]
+  timelines                 Timeline[]
+  webhookPayloads           WebhookPayload[]
   departmentHealthSnapshots DepartmentHealthSnapshot[]
+  tasks                     Task[]
+  targets                   Target[]
 
   @@index([slug])
 }
@@ -93,6 +95,7 @@ model User {
   auditLogs     AuditLog[]
   assignedLeads Lead[]     @relation("assignedTo")
   createdLeads  Lead[]     @relation("createdBy")
+  tasks         Task[]
 
   @@unique([orgId, email])
   @@index([orgId])
@@ -282,12 +285,12 @@ model Contact {
   // only 'New Lead' | 'Contacted' | 'Disqualified' are ever set here since
   // 'Qualified' onward is represented by the Lead created via assign-to-sales.
   stage                String    @default("New Lead")
-  lastCallOutcome       String?
-  lastCallDate          DateTime?
-  nextFollowupDate      DateTime?
-  nextFollowupTimeZone  String?
-  disqualifiedReason    String?
-  disqualifiedDetails   String?
+  lastCallOutcome      String?
+  lastCallDate         DateTime?
+  nextFollowupDate     DateTime?
+  nextFollowupTimeZone String?
+  disqualifiedReason   String?
+  disqualifiedDetails  String?
 
   // Concurrency lease — held while a Lead Gen person has a Call Log/Reminder
   // modal open for this contact, so a second user sees it's in progress.
@@ -304,16 +307,16 @@ model Contact {
 
   version Int @default(1)
 
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  createdById    String
-  deletedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  createdById     String
+  deletedAt       DateTime?
   deletedByUserId String?
 
-  leads      Lead[]
-  activities Activity[]
-  piiViewLogs PiiViewLog[]
-  fieldDiffs LeadFieldDiff[]
+  leads        Lead[]
+  activities   Activity[]
+  piiViewLogs  PiiViewLog[]
+  fieldDiffs   LeadFieldDiff[]
   anomalyFlags AnomalyFlag[]
 
   // Uniqueness on (orgId, email) / (orgId, phone) is enforced by partial
@@ -492,7 +495,7 @@ model TimelineEvent {
 }
 
 model Activity {
-  id     String @id @default(uuid())
+  id     String  @id @default(uuid())
   orgId  String
   // Exactly one of leadId/contactId is set (enforced in application code, not
   // the DB): pre-Lead call/reminder activities logged by Lead Gen against a
@@ -539,20 +542,20 @@ model Activity {
 // return 200; a drain cron processes rows async so a traffic spike never
 // blocks the webhook's response or exhausts the request-scoped DB pool.
 model WebhookPayload {
-  id           String @id @default(uuid())
-  orgId        String
-  org          Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id    String       @id @default(uuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  sourceSystem String // "WHATSAPP" today; future channels reuse this table
-  phone        String?
-  email        String?
-  companyName  String?
+  sourceSystem   String // "WHATSAPP" today; future channels reuse this table
+  phone          String?
+  email          String?
+  companyName    String?
   sourceMetadata Json
 
-  status     String    @default("PENDING") // PENDING | PROCESSED | DLQ
-  dlqReason  String?
+  status      String    @default("PENDING") // PENDING | PROCESSED | DLQ
+  dlqReason   String?
   processedAt DateTime?
-  receivedAt  DateTime @default(now())
+  receivedAt  DateTime  @default(now())
 
   @@index([orgId, status])
   @@index([receivedAt])
@@ -596,20 +599,20 @@ model LeadFieldDiff {
 // mismatches, and lock-acquire spam surfaced for manager review rather than
 // auto-blocking (false positives are cheap to review, expensive to enforce).
 model AnomalyFlag {
-  id           String    @id @default(uuid())
-  orgId        String
-  userId       String
-  contactId    String?
-  contact      Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
-  entityType   String? // "Lead" for command-center alerts; null = legacy contact-scoped flags
-  entityId     String?
-  flagType     String // VELOCITY_SPIKE | DURATION_MISMATCH | MODAL_SPAM | SLA_BREACH_STREAK | AGED_QUOTE_SENT
-  severity     String // LOW | MEDIUM | HIGH
-  description  String
-  flaggedAt    DateTime  @default(now())
-  resolvedAt   DateTime?
-  resolvedBy   String?
-  resolution   String?
+  id          String    @id @default(uuid())
+  orgId       String
+  userId      String
+  contactId   String?
+  contact     Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  entityType  String? // "Lead" for command-center alerts; null = legacy contact-scoped flags
+  entityId    String?
+  flagType    String // VELOCITY_SPIKE | DURATION_MISMATCH | MODAL_SPAM | SLA_BREACH_STREAK | AGED_QUOTE_SENT
+  severity    String // LOW | MEDIUM | HIGH
+  description String
+  flaggedAt   DateTime  @default(now())
+  resolvedAt  DateTime?
+  resolvedBy  String?
+  resolution  String?
 
   @@index([orgId, resolvedAt])
   @@index([userId])
@@ -921,4 +924,101 @@ model Notification {
   @@index([slaClockId])
   @@index([leadId])
   @@index([createdAt])
+}
+
+// ============================================================================
+// MTPL OS — Tasks, Targets, Customer/Supplier Health
+// Customer/Supplier below are the pre-existing Phase 2 ERP tables
+// (prisma/migrations/0_init), introspected read-only via `prisma db pull`.
+// Only the scalar fields these dashboard cards need are declared — the
+// reverse relations to Invoice/PurchaseOrder/SalesOrder/Product etc. are
+// deliberately omitted since those models aren't tracked in this schema and
+// the dashboard doesn't need them; the underlying FK lives on those tables,
+// not here, so omitting the relation array requires no migration.
+// ============================================================================
+
+model Customer {
+  id            String   @id
+  orgId         String
+  name          String
+  contactPerson String
+  email         String
+  phone         String
+  address       String
+  city          String
+  state         String
+  pincode       String
+  gstNumber     String?
+  bankAccount   Json?
+  creditLimit   Decimal  @default(0) @db.Decimal(12, 2)
+  type          String   @default("dealer")
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime
+
+  @@index([orgId])
+  @@index([type])
+}
+
+model Supplier {
+  id            String   @id
+  orgId         String
+  name          String
+  contactPerson String
+  email         String
+  phone         String
+  address       String
+  city          String
+  state         String
+  pincode       String
+  gstNumber     String?
+  bankAccount   Json?
+  paymentTerms  String?
+  rating        Decimal  @default(0) @db.Decimal(3, 2)
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime
+
+  @@index([orgId])
+  @@index([active])
+}
+
+model Task {
+  id    String       @id @default(uuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  assignedToId String
+  assignedTo   User   @relation(fields: [assignedToId], references: [id])
+
+  title             String
+  type              String // "FOLLOWUP" | "REMINDER" | "CALL" | "MEETING"
+  dueAt             DateTime
+  relatedEntityType String? // "Lead" | "Customer" | "Supplier" | ...
+  relatedEntityId   String?
+  completedAt       DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, assignedToId, dueAt])
+  @@index([orgId, completedAt])
+}
+
+model Target {
+  id    String       @id @default(uuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  department  String // "Sales" | "LeadGen" | "Purchase"
+  metric      String // e.g. "revenue" | "conversion_rate" | "cost_savings"
+  period      String // "MONTH"
+  periodStart DateTime
+  targetValue Decimal  @db.Decimal(14, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([orgId, department, metric, period, periodStart])
+  @@index([orgId, department])
 }

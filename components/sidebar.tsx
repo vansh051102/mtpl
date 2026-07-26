@@ -10,6 +10,7 @@ import {
   Contact,
   LayoutDashboard,
   Settings,
+  ShoppingCart,
   Trophy,
   Users,
 } from 'lucide-react'
@@ -27,7 +28,7 @@ interface NavItem {
   permissions: string[]
 }
 
-const NAV_ICONS = { LayoutDashboard, Users, Contact, BarChart2, Trophy, Settings } as const
+const NAV_ICONS = { LayoutDashboard, Users, Contact, BarChart2, Trophy, Settings, ShoppingCart } as const
 
 export function Sidebar() {
   const pathname = usePathname()
@@ -56,6 +57,11 @@ export function Sidebar() {
     })
   }
 
+  // Frozen for MTPL OS V1: Overview, Sales, Lead Generation, Purchase, Customers,
+  // Employees, Reports, Settings — no Manufacturing/Dispatch/Inventory/Accounts
+  // until a V2 decision. Sales and Lead Generation both point at /leads (the one
+  // pipeline route, department-filtered) rather than splitting into two pages —
+  // that split is bigger work than a nav relabel and out of scope here.
   const navItems: NavItem[] = [
     {
       href: overviewHref,
@@ -63,18 +69,30 @@ export function Sidebar() {
       icon: NAV_ICONS.LayoutDashboard,
       permissions: [],
     },
-    { href: '/leads', label: 'Leads', icon: NAV_ICONS.Users, permissions: ['leads:read'] },
-    { href: '/contacts', label: 'Contacts', icon: NAV_ICONS.Contact, permissions: ['contacts:read'] },
+    { href: '/leads?department=Sales', label: 'Sales', icon: NAV_ICONS.Users, permissions: ['leads:read'] },
+    {
+      href: '/leads?department=Marketing',
+      label: 'Lead Generation',
+      icon: NAV_ICONS.Contact,
+      permissions: ['leads:read'],
+    },
+    {
+      href: '/purchase',
+      label: 'Purchase',
+      icon: NAV_ICONS.ShoppingCart,
+      permissions: ['purchase_requests:read'],
+    },
+    { href: '/customers', label: 'Customers', icon: NAV_ICONS.Contact, permissions: ['contacts:read'] },
+    { href: '/employees/command-center', label: 'Employees', icon: NAV_ICONS.Trophy, permissions: [] },
     {
       href: '/analytics',
-      label: 'Analytics',
+      label: 'Reports',
       icon: NAV_ICONS.BarChart2,
       permissions: ['analytics:read'],
     },
-    { href: '/performance', label: 'Performance', icon: NAV_ICONS.Trophy, permissions: [] },
     {
       href: role === 'admin' ? '/admin' : '/settings',
-      label: role === 'admin' ? 'Admin' : 'Settings',
+      label: 'Settings',
       icon: NAV_ICONS.Settings,
       permissions: role === 'admin' ? [] : ['settings:edit'],
     },
