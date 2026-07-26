@@ -86,6 +86,26 @@ export async function getUsersInSameTerritoryOrBranch(userId: string): Promise<s
   return peers.map((p) => p.id)
 }
 
+/**
+ * User IDs sharing the viewer's Team — used to scope the "Assigned to"
+ * dropdown so a Lead Gen user can only assign to Sales Executives on their
+ * own Team. Returns `null` when the viewer has no team, so callers can fall
+ * back to the prior unscoped behavior rather than an empty result.
+ */
+export async function getUsersOnSameTeam(userId: string): Promise<string[] | null> {
+  const viewer = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { orgId: true, teamId: true },
+  })
+  if (!viewer || !viewer.teamId) return null
+
+  const peers = await prisma.user.findMany({
+    where: { orgId: viewer.orgId, status: 'active', teamId: viewer.teamId },
+    select: { id: true },
+  })
+  return peers.map((p) => p.id)
+}
+
 // ============================================================================
 // OWNERSHIP FILTERING
 // ============================================================================

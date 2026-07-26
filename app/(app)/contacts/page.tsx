@@ -68,6 +68,7 @@ const inputClass =
 
 const QUEUE_TABS = [
   { key: 'active', label: 'My Active Queue' },
+  { key: 'notConnected', label: 'Not Connected' },
   { key: 'handedOff', label: 'Handed Off' },
 ] as const
 
@@ -77,6 +78,13 @@ const QUEUE_TABS = [
 function isActiveQueueContact(c: ContactRow): boolean {
   const linkedLead = c.leads[0]
   return !linkedLead || LOST_LEAD_STAGES.includes(linkedLead.stage)
+}
+
+// Mirrors the Lead side's contactOutcome-based "Not Received" tab
+// (lib/lead-stages.ts leadTabsForRole) — a contact whose most recent call
+// didn't reach the prospect, still sitting in the active queue.
+function isNotConnectedContact(c: ContactRow): boolean {
+  return isActiveQueueContact(c) && !!c.lastCallOutcome && c.lastCallOutcome !== 'Connected'
 }
 
 export default function ContactsPage() {
@@ -152,8 +160,11 @@ export default function ContactsPage() {
   }, [load, search])
 
   useEffect(() => {
+    // scope=team restricts this to the caller's own Team when they have one
+    // (Lead Gen can only hand off to same-team Sales Executives) — no-ops
+    // server-side for a caller with no team.
     api
-      .get<OrgUser[]>('/users')
+      .get<OrgUser[]>('/users?scope=team')
       .then((res) =>
         setSalespeople(
           (res.data ?? []).filter((u) => u.status === 'active' && SALES_ROLES.includes(u.role))
@@ -420,14 +431,16 @@ export default function ContactsPage() {
   }
 
   const activeQueueContacts = contacts.filter(isActiveQueueContact)
+  const notConnectedContacts = activeQueueContacts.filter(isNotConnectedContact)
   const handedOffContacts = contacts.filter((c) => !isActiveQueueContact(c))
   const wonHandedOffCount = handedOffContacts.filter((c) => c.leads[0]?.stage === 'Order Closed').length
   const conversionRate =
     handedOffContacts.length > 0 ? Math.round((wonHandedOffCount / handedOffContacts.length) * 100) : 0
+  const visibleActiveContacts = queueTab === 'notConnected' ? notConnectedContacts : activeQueueContacts
 
   useEffect(() => {
     setFocusedIndex(0)
-  }, [queueTab, activeQueueContacts.length])
+  }, [queueTab, visibleActiveContacts.length])
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -545,7 +558,7 @@ export default function ContactsPage() {
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 
-      {queueTab === 'active' && (
+      {(queueTab === 'active' || queueTab === 'notConnected') && (
       <div className="overflow-hidden rounded-lg border border-border bg-card shadow-soft">
         <table className="w-full text-left text-sm">
           <thead className="border-b border-border bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
@@ -560,7 +573,7 @@ export default function ContactsPage() {
             </tr>
           </thead>
           <tbody>
-            {loading && activeQueueContacts.length === 0 ? (
+            {loading && visibleActiveContacts.length === 0 ? (
               Array.from({ length: 8 }).map((_, i) => (
                 <tr key={i} className="border-b border-border/60 last:border-0">
                   {Array.from({ length: 7 }).map((__, j) => (
@@ -570,14 +583,16 @@ export default function ContactsPage() {
                   ))}
                 </tr>
               ))
-            ) : activeQueueContacts.length === 0 ? (
+            ) : visibleActiveContacts.length === 0 ? (
               <tr>
                 <td colSpan={7} className="px-3 py-8 text-center text-muted-foreground">
-                  No contacts yet. Add database leads here for marketing outreach.
+                  {queueTab === 'notConnected'
+                    ? 'No not-connected contacts right now.'
+                    : 'No contacts yet. Add database leads here for marketing outreach.'}
                 </td>
               </tr>
             ) : (
-              activeQueueContacts.map((c, idx) => {
+              visibleActiveContacts.map((c, idx) => {
                 const isLocked = Boolean(
                   c.lockedByUserId && c.lockedUntil && new Date(c.lockedUntil) > new Date()
                 )
@@ -652,6 +667,14 @@ export default function ContactsPage() {
                       >
                         {c.stage}
                       </span>
+                      {c.lastCallOutcome && c.lastCallOutcome !== 'Connected' && (
+                        <span
+                          title={`Last call outcome: ${c.lastCallOutcome}`}
+                          className="inline-flex items-center rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground"
+                        >
+                          Not Connected
+                        </span>
+                      )}
                       {c.isDncListed && (
                         <span
                           title="Do-Not-Call listed — cannot be contacted without a compliance override"

@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { buildOwnershipFilterAsync } from '@/lib/rbac'
 import { successResponse, withErrorHandler } from '@/lib/api-response'
@@ -67,6 +68,32 @@ async function computeFlaggedDisqualifications(orgId: string) {
   }
 
   return Array.from(byUser.values()).sort((a, b) => b.count - a.count)
+}
+
+// KRA/KPI summary matching the leads-list sort-dropdown metrics (Most recently
+// active, Highest quotation value, Highest order value, Highest margin, Most
+// calls, Most messages) — surfaced on the marketing (individual-scoped) and
+// admin (org-wide) dashboards. Same `where` shape the caller already built for
+// its own scope, so this stays consistent with whatever ownership filter (or
+// lack thereof, for admin) is already in effect.
+async function computeSortMetricKpis(where: Prisma.LeadWhereInput, weekStart: Date) {
+  const [agg, recentlyActiveCount] = await prisma.$transaction([
+    prisma.lead.aggregate({
+      where,
+      _max: { quotationValue: true, orderValue: true, supplierMargin: true },
+      _sum: { totalCalls: true, totalMessages: true },
+    }),
+    prisma.lead.count({ where: { ...where, lastActivityAt: { gte: weekStart } } }),
+  ])
+
+  return {
+    recentlyActiveCount,
+    highestQuotationValue: agg._max.quotationValue != null ? Number(agg._max.quotationValue) : null,
+    highestOrderValue: agg._max.orderValue != null ? Number(agg._max.orderValue) : null,
+    highestMargin: agg._max.supplierMargin != null ? Number(agg._max.supplierMargin) : null,
+    totalCalls: agg._sum.totalCalls ?? 0,
+    totalMessages: agg._sum.totalMessages ?? 0,
+  }
 }
 
 // GET /api/v1/leads/stats - Aggregate counts for the dashboard metric cards.
@@ -157,6 +184,7 @@ export const GET = withErrorHandler(async (req: Request) => {
     stats.contactedCount = byStageMap['Contacted'] ?? 0
     stats.qualifiedCount = byStageMap['Qualified'] ?? 0
     stats.newLeadCount = byStageMap['New Lead'] ?? 0
+    stats.kpi = await computeSortMetricKpis(leadsWhere, weekStart)
   }
 
   if (role === 'sales_manager' || role === 'sales_executive' || role === 'sales_purchase') {
@@ -222,6 +250,8 @@ export const GET = withErrorHandler(async (req: Request) => {
 
   // Admin: recent quotation changes (leads that moved to Quote Sent this week)
   if (role === 'admin') {
+    stats.kpi = await computeSortMetricKpis({ orgId }, weekStart)
+
     const recentQuoteSents = await prisma.lead.findMany({
       where: {
         orgId,

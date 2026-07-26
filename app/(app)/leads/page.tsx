@@ -127,6 +127,21 @@ export default function LeadsPage() {
   const me = useCurrentUser()
   const role = me?.role ?? 'admin'
   const leadTabs = useMemo(() => leadTabsForRole(role), [role])
+  const isMarketingRole = role === 'marketing_manager' || role === 'marketing_executive'
+
+  // Admin-configurable — Settings.moduleAccess['lead_gen_won_lost_views'] hides
+  // the Recently Won/Recently Lost smart-view chips for marketing roles.
+  const [wonLostViewsEnabled, setWonLostViewsEnabled] = useState(true)
+  useEffect(() => {
+    if (!isMarketingRole) return
+    api
+      .get<{ moduleAccess?: Record<string, boolean> }>('/settings')
+      .then((res) => setWonLostViewsEnabled(res.data?.moduleAccess?.lead_gen_won_lost_views ?? false))
+      .catch(() => setWonLostViewsEnabled(false))
+  }, [isMarketingRole])
+  const visibleSmartViews = isMarketingRole
+    ? SMART_VIEWS.filter((v) => wonLostViewsEnabled || (v.id !== 'recently-won' && v.id !== 'recently-lost'))
+    : SMART_VIEWS
 
   const [initialized, setInitialized] = useState(false)
   const [view, setView] = useState<'list' | 'kanban'>('list')
@@ -428,6 +443,38 @@ export default function LeadsPage() {
     setAdvancedFilters(resolved)
   }
 
+  /** Master reset — wipes every filter, then re-applies "My Work Today" as the
+   *  standard baseline view (not a blank slate) since that's the default
+   *  operational view this team works from. */
+  function resetFilters() {
+    setPage(1)
+    setPriority('')
+    setFromDate('')
+    setToDate('')
+    setSearch('')
+    setSortBy('createdAt')
+    setSortDir('desc')
+
+    const myWorkToday = SMART_VIEWS.find((v) => v.id === 'my-work-today')
+    if (!myWorkToday) {
+      setStage('')
+      setDays('')
+      setContactOutcome('')
+      setAdvancedFilters({})
+      setActiveSmartView(null)
+      return
+    }
+    setStage(myWorkToday.filters.stage ?? '')
+    setDays(myWorkToday.filters.days ?? '')
+    setContactOutcome('')
+    const resolved = { ...myWorkToday.filters.advanced }
+    if (resolved.assignedToId === CURRENT_USER_SENTINEL) {
+      resolved.assignedToId = me?.id
+    }
+    setAdvancedFilters(resolved)
+    setActiveSmartView(myWorkToday.id)
+  }
+
   function handleSort(column: SortBy) {
     if (sortBy === column) {
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
@@ -602,6 +649,9 @@ export default function LeadsPage() {
             )}
           >
             More filters
+          </button>
+          <button type="button" onClick={resetFilters} className="crm-chip crm-chip-idle">
+            Reset filters
           </button>
           <select
             value={sortBy}
@@ -1064,7 +1114,7 @@ export default function LeadsPage() {
 
       <section aria-label="Smart views" className="overflow-x-auto">
         <div className="flex min-w-max gap-1.5">
-          {SMART_VIEWS.map((view) => (
+          {visibleSmartViews.map((view) => (
             <button
               key={view.id}
               type="button"

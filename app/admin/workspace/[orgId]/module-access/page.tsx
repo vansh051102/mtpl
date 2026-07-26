@@ -42,6 +42,11 @@ const MODULES: { key: string; title: string; description: string }[] = [
     title: 'Quotations management',
     description: 'Controls quotations list/detail pages and quotation document storage.',
   },
+  {
+    key: 'lead_gen_won_lost_views',
+    title: 'Recently Won/Lost views for Lead Gen',
+    description: 'Shows the "Recently Won" and "Recently Lost" smart-view filter chips to marketing roles on the Leads page.',
+  },
 ]
 
 export default function ModuleAccessPage() {

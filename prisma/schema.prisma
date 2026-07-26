@@ -52,6 +52,7 @@ model Organization {
   kraDefinitions    KraDefinition[]
   timelines         Timeline[]
   webhookPayloads   WebhookPayload[]
+  departmentHealthSnapshots DepartmentHealthSnapshot[]
 
   @@index([slug])
 }
@@ -81,9 +82,13 @@ model User {
   defaultDashboard     String?
   maskedFieldsOverride String[] @default([]) // empty = inherit Role.maskedFields; non-empty overrides it
 
-  lastLogin DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  teamId String?
+  team   Team?   @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  lastLogin        DateTime?
+  liveAvailability String    @default("OFFLINE") // "ONLINE" | "OFFLINE" — derived from request activity, not user-set
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   auditLogs     AuditLog[]
   assignedLeads Lead[]     @relation("assignedTo")
@@ -94,6 +99,22 @@ model User {
   @@index([status])
   @@index([department])
   @@index([designation])
+  @@index([teamId])
+}
+
+// Admin-managed grouping used to scope lead/contact assignment: a Lead-Gen
+// user can only assign to Sales Executives on their own Team (lib/ownership.ts
+// getUsersOnSameTeam). Nullable membership — not every user needs a team.
+model Team {
+  id    String @id @default(uuid())
+  orgId String
+
+  name      String
+  members   User[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId])
 }
 
 model Role {
@@ -580,7 +601,9 @@ model AnomalyFlag {
   userId       String
   contactId    String?
   contact      Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
-  flagType     String // VELOCITY_SPIKE | DURATION_MISMATCH | MODAL_SPAM
+  entityType   String? // "Lead" for command-center alerts; null = legacy contact-scoped flags
+  entityId     String?
+  flagType     String // VELOCITY_SPIKE | DURATION_MISMATCH | MODAL_SPAM | SLA_BREACH_STREAK | AGED_QUOTE_SENT
   severity     String // LOW | MEDIUM | HIGH
   description  String
   flaggedAt    DateTime  @default(now())
@@ -590,6 +613,20 @@ model AnomalyFlag {
 
   @@index([orgId, resolvedAt])
   @@index([userId])
+  @@index([orgId, entityType, entityId])
+}
+
+model DepartmentHealthSnapshot {
+  id           String       @id @default(uuid())
+  orgId        String
+  org          Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  department   String // "Sales" | "Marketing" | "Purchase" | "Management" (aggregate rollup)
+  health       String // "GREEN" | "YELLOW" | "RED"
+  score        Decimal      @db.Decimal(5, 2) // 0-100 composite
+  metricsJson  Json // raw component metrics driving the score, for drill-down
+  calculatedAt DateTime     @default(now())
+
+  @@index([orgId, department, calculatedAt])
 }
 
 model Quote {

@@ -1,4 +1,11 @@
-import { buildOwnershipFilter, buildOwnershipFilterAsync, canAccessLead, canAccessContact, getUsersInSameTerritoryOrBranch } from '../ownership'
+import {
+  buildOwnershipFilter,
+  buildOwnershipFilterAsync,
+  canAccessLead,
+  canAccessContact,
+  getUsersInSameTerritoryOrBranch,
+  getUsersOnSameTeam,
+} from '../ownership'
 import { PURCHASE_QUERY_STAGES } from '../lead-stages'
 
 // Reference the shared constant rather than a hand-copied list, so widening or
@@ -233,6 +240,35 @@ describe('getUsersInSameTerritoryOrBranch', () => {
     expect(result).toEqual(['u1', 'u2'])
     expect(mockPrisma.user.findMany).toHaveBeenCalledWith({
       where: { orgId: 'o1', status: 'active', OR: [{ territory: 'North' }] },
+      select: { id: true },
+    })
+  })
+})
+
+describe('getUsersOnSameTeam', () => {
+  beforeEach(() => {
+    mockPrisma.user.findUnique.mockReset()
+    mockPrisma.user.findMany.mockReset()
+  })
+
+  it('returns null when the viewer has no team', async () => {
+    mockPrisma.user.findUnique.mockResolvedValue({ orgId: 'o1', teamId: null })
+    expect(await getUsersOnSameTeam('u')).toBeNull()
+    expect(mockPrisma.user.findMany).not.toHaveBeenCalled()
+  })
+
+  it('returns null when the viewer does not exist', async () => {
+    mockPrisma.user.findUnique.mockResolvedValue(null)
+    expect(await getUsersOnSameTeam('missing')).toBeNull()
+  })
+
+  it('scopes to active peers on the same team', async () => {
+    mockPrisma.user.findUnique.mockResolvedValue({ orgId: 'o1', teamId: 't1' })
+    mockPrisma.user.findMany.mockResolvedValue([{ id: 'u1' }, { id: 'u2' }])
+    const result = await getUsersOnSameTeam('u1')
+    expect(result).toEqual(['u1', 'u2'])
+    expect(mockPrisma.user.findMany).toHaveBeenCalledWith({
+      where: { orgId: 'o1', status: 'active', teamId: 't1' },
       select: { id: true },
     })
   })

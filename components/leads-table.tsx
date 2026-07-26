@@ -13,6 +13,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { statusPillClass } from '@/components/ui/status-pill'
 import { useToast } from '@/components/ui/toast'
 import { cn, formatDate } from '@/lib/utils'
+import { useHasPermission } from '@/lib/use-current-user'
 import { LeadDetailDrawer } from '@/components/lead-detail-drawer'
 import { LeadActivityPopover, type PopoverAnchor } from '@/components/lead-activity-popover'
 import type { SubTab } from '@/components/lead-detail-panel'
@@ -148,6 +149,7 @@ export function LeadsTable({
   isPending,
 }: LeadsTableProps) {
   const { toast } = useToast()
+  const canViewQuotes = useHasPermission('quotes:read')
   const [busyId, setBusyId] = useState<string | null>(null)
   const [drawer, setDrawer] = useState<DrawerTarget | null>(null)
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null)
@@ -523,18 +525,20 @@ export function LeadsTable({
                   </td>
                   <td className="crm-table-cell sticky right-0 z-10 bg-card">
                     <div className="flex flex-col items-end gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          openLead(lead, {
-                            view: 'quotation',
-                            openQuoteForm: !lead.hasQuote,
-                          })
-                        }
-                        className="inline-flex h-8 items-center rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground hover:opacity-90"
-                      >
-                        {lead.hasQuote ? 'View Quote' : 'Create Quote'}
-                      </button>
+                      {canViewQuotes && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            openLead(lead, {
+                              view: 'quotation',
+                              openQuoteForm: !lead.hasQuote,
+                            })
+                          }
+                          className="inline-flex h-8 items-center rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground hover:opacity-90"
+                        >
+                          {lead.hasQuote ? 'View Quote' : 'Create Quote'}
+                        </button>
+                      )}
                       <div className="flex items-center gap-1">
                         <button
                           type="button"

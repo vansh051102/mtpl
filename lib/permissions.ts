@@ -57,6 +57,9 @@ export const PERMISSIONS = {
   ROLES_READ: 'roles:read',
   ROLES_EDIT: 'roles:edit',
 
+  // Teams (admin-managed groups scoping lead/contact assignment)
+  TEAMS_MANAGE: 'teams:manage',
+
   // Master Data
   MASTER_DATA_CREATE: 'master_data:create',
   MASTER_DATA_READ: 'master_data:read',
@@ -94,6 +97,7 @@ export const PERMISSION_GROUPS: Record<string, string[]> = {
   settings: ['read', 'edit'],
   users: ['read', 'create', 'edit', 'delete'],
   roles: ['read', 'create', 'edit'],
+  teams: ['manage'],
   master_data: ['read', 'create', 'edit'],
   reports: ['read'],
 }
@@ -110,6 +114,7 @@ export const RESOURCE_LABELS: Record<string, { label: string; description: strin
   settings: { label: 'Settings', description: 'Workspace configuration and integrations' },
   users: { label: 'Users', description: 'Team member accounts' },
   roles: { label: 'Roles', description: 'Role definitions and permissions (this screen)' },
+  teams: { label: 'Teams', description: 'Groups scoping which Sales Executives a Lead Gen user can assign to' },
   master_data: { label: 'Master Data', description: 'Shared reference data like products and vendors' },
   reports: { label: 'Reports', description: 'Exported business reports' },
 }
@@ -124,6 +129,7 @@ export const ACTION_LABELS: Record<string, string> = {
   import: 'Import',
   export: 'Export',
   send: 'Send',
+  manage: 'Manage',
 }
 
 export function isKnownPermission(perm: string): boolean {

@@ -9,6 +9,15 @@ export interface DashboardStats {
   contactedCount?: number
   qualifiedCount?: number
   newLeadCount?: number
+  // Marketing + Admin — mirrors the leads-list sort-dropdown metrics
+  kpi?: {
+    recentlyActiveCount: number
+    highestQuotationValue: number | null
+    highestOrderValue: number | null
+    highestMargin: number | null
+    totalCalls: number
+    totalMessages: number
+  }
   // Sales-only
   activitiesThisWeek?: number
   dealAgingBuckets?: { '0-7d': number; '8-30d': number; '30d+': number }

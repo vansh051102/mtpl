@@ -20,6 +20,7 @@ import { buildOwnershipFilterAsync, canAccessLead, PERMISSIONS } from '@/lib/rba
 import { parseAdvancedLeadFilters, buildAdvancedLeadWhere, ADVANCED_LEAD_SORT_FIELDS } from '@/lib/lead-filters'
 import { resolveMaskedFields, applyLeadFieldMask } from '@/lib/lead-serializer'
 import { DEPARTMENTS, getDepartmentWhereClause } from '@/lib/lead-department'
+import { stageQueryValues } from '@/lib/lead-stages'
 
 // Lead.status values set by the stage-change route (app/api/v1/leads/[id]/stage/route.ts)
 // — not previously exposed as a list filter.
@@ -241,7 +242,12 @@ export const GET = withErrorHandler(async (req) => {
   const where = {
     orgId: ctx.orgId,
     ...ownershipFilter,
-    ...(stage && { stage }),
+    // stageQueryValues includes the legacy 'Closed Won' alias when filtering
+    // for 'Order Confirmed' — every other stage-aware query in the app
+    // already accounts for it (lib/ownership.ts, leads/stats, performance,
+    // analytics, leads-kanban); an exact-match filter here would silently
+    // hide those rows from this tab.
+    ...(stage && { stage: { in: stageQueryValues(stage) } }),
     ...(priority && { priority }),
     ...(assignedToId && { assignedToId }),
     // "not_received" also covers leads with no call logged yet (null outcome)

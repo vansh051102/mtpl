@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db'
 import { supabaseAdmin, getOrganizationUsers } from '@/lib/auth'
 import { PERMISSIONS } from '@/lib/rbac'
+import { getUsersOnSameTeam } from '@/lib/ownership'
 import { successResponse, withErrorHandler, ValidationError, ConflictError } from '@/lib/api-response'
 import { validateRequest } from '@/lib/middleware/validate-headers'
 import { rbacService } from '@/lib/services/rbac.service'
@@ -27,6 +28,18 @@ export const GET = withErrorHandler(async (req) => {
 
   const users = await getOrganizationUsers(orgId)
   // Admins managing members need inactive users too; pickers can filter client-side
+
+  // ?scope=team — restrict to the caller's own Team (assign-to-sales pickers
+  // for Lead Gen roles). Falls back to unscoped when the caller has no team.
+  const url = new URL(req.url)
+  if (url.searchParams.get('scope') === 'team') {
+    const teamUserIds = await getUsersOnSameTeam(ctx.userId)
+    if (teamUserIds) {
+      const teamSet = new Set(teamUserIds)
+      return successResponse(users.filter((u) => teamSet.has(u.id)))
+    }
+  }
+
   return successResponse(users)
 })
 

@@ -64,6 +64,26 @@ function AdminDashboardPageContent() {
         />
       </section>
 
+      {stats?.kpi && (
+        <section aria-label="Performance KPIs" className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+          <MetricCard label="Recently active" helper="last 7 days" value={stats.kpi.recentlyActiveCount} />
+          <MetricCard
+            label="Highest quotation value"
+            value={stats.kpi.highestQuotationValue != null ? `₹${stats.kpi.highestQuotationValue.toLocaleString('en-IN')}` : '—'}
+          />
+          <MetricCard
+            label="Highest order value"
+            value={stats.kpi.highestOrderValue != null ? `₹${stats.kpi.highestOrderValue.toLocaleString('en-IN')}` : '—'}
+          />
+          <MetricCard
+            label="Highest margin"
+            value={stats.kpi.highestMargin != null ? `${stats.kpi.highestMargin}%` : '—'}
+          />
+          <MetricCard label="Total calls" value={stats.kpi.totalCalls} />
+          <MetricCard label="Total messages" value={stats.kpi.totalMessages} />
+        </section>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>Leads by Stage</CardTitle>

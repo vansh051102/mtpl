@@ -12,6 +12,7 @@ const SECTIONS: { title: string; items: { href: string; label: string }[] }[] = 
       { href: 'integrations', label: 'Integrations' },
       { href: 'roles-hierarchy', label: 'Roles & Hierarchy' },
       { href: 'members', label: 'Members' },
+      { href: 'teams', label: 'Teams' },
     ],
   },
   {

@@ -99,6 +99,7 @@ export function LeadDetailPanel({
   const { toast } = useToast()
   const canEdit = useHasPermission('leads:edit')
   const canCreateActivity = useHasPermission('activities:create')
+  const canViewQuotes = useHasPermission('quotes:read')
 
   const [view, setView] = useState<'lead' | 'quotation'>(initialView)
   const [subTab, setSubTab] = useState<SubTab>(initialTab)
@@ -263,9 +264,9 @@ export function LeadDetailPanel({
         <Lead360Modal contactId={lead.contact.id} onClose={() => setShow360(false)} />
       )}
 
-      {/* Lead / Quotation toggle (fixed) */}
+      {/* Lead / Quotation toggle (fixed) — Quotation hidden without quotes:read */}
       <div className="flex flex-none gap-1 border-b border-border p-2">
-        {(['lead', 'quotation'] as const).map((v) => (
+        {(canViewQuotes ? (['lead', 'quotation'] as const) : (['lead'] as const)).map((v) => (
           <button
             key={v}
             type="button"
@@ -315,9 +316,11 @@ export function LeadDetailPanel({
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold">Requirements</h3>
-              <Button size="sm" variant="outline" onClick={() => setView('quotation')}>
-                Create Quote
-              </Button>
+              {canViewQuotes && (
+                <Button size="sm" variant="outline" onClick={() => setView('quotation')}>
+                  Create Quote
+                </Button>
+              )}
             </div>
             <textarea
               value={requirement}

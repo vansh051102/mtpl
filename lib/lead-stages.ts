@@ -46,6 +46,16 @@ export function normalizeStageName(stage: string): string {
   return stage === LEGACY_CLOSED_WON ? 'Order Confirmed' : stage
 }
 
+/**
+ * Stage values to match in a DB query for a given user-facing stage filter —
+ * includes the legacy alias when filtering for 'Order Confirmed', same
+ * reasoning as PURCHASE_QUERY_STAGES above, so a stage-tab query doesn't
+ * silently miss rows still stored under the old name.
+ */
+export function stageQueryValues(stage: string): string[] {
+  return stage === 'Order Confirmed' ? ['Order Confirmed', LEGACY_CLOSED_WON] : [stage]
+}
+
 // Controlled vocabulary for Deal Lost / Disqualified reasons. Disqualified and
 // Deal Lost have distinct lists (a lead is disqualified early — bad fit/contact
 // — vs lost late after a real opportunity). Free-text reasons are rejected so
