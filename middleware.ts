@@ -61,6 +61,7 @@ async function resolveSession(req: NextRequest, accessToken?: string): Promise<S
     try {
       const sessionRes = await fetch(new URL('/api/internal/session', req.url), {
         headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+        signal: AbortSignal.timeout(5_000),
       })
       if (sessionRes.ok) {
         const data = (await sessionRes.json()) as SessionData
